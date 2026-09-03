@@ -1,0 +1,19 @@
+# Node
+node_modules/
+npm-debug.log*
+
+# Datos de ejecución (no son código, se regeneran / son estado local)
+registro.json
+*.respaldo_*
+estado_ficha.json
+
+# Secretos (heredado del sistema anterior; no debería volver a aparecer)
+.env
+
+# SO
+Thumbs.db
+.DS_Store
+
+# Datos reales de aprendices (PII / disciplinarios) usados como prueba local:
+# nunca deben quedar en el historial de git.
+CONTROL_ASISTENCIA*.xlsx
