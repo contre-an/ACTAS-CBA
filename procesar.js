@@ -273,6 +273,14 @@ function procesarControl(ruta, forzar = false, simular = false) {
       // actualizar periodo y retardos sobrantes
       const reg2 = cargarRegistro();
       const ap2 = reg2.aprendices[clave];
+      // Se guarda también el "antes" (corte y retardos previos a esta corrida) y
+      // el nombre del archivo generado, en el último renglón del historial que
+      // acaba de escribir generarActa: es lo que necesita la herramienta de
+      // reversión para deshacer esta acta sin adivinar nada.
+      const ultimo = ap2.historial[ap2.historial.length - 1];
+      ultimo.archivo = nombreArchivo;
+      ultimo.fechaCorteAntes = corte;
+      ultimo.retardosPendientesAntes = estado.retardosPendientes || [];
       ap2.ultimaFechaIncidente = iso(incidentes[incidentes.length - 1].fechaD);
       ap2.retardosPendientes = sobrantes.map(iso);
       reg2.aprendices[clave] = ap2; guardarRegistro(reg2);
@@ -405,4 +413,4 @@ function generarEntregas(carpeta) {
   return resultados;
 }
 
-module.exports = { procesarControl, procesarTrimestre, generarEntregas };
+module.exports = { procesarControl, procesarTrimestre, generarEntregas, leerControl };
