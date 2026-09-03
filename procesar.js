@@ -3,7 +3,6 @@ const fs = require("fs");
 const path = require("path");
 const XLSX = require("xlsx");
 const PizZip = require("pizzip");
-const { execFileSync } = require("child_process");
 const { generarActa, generarActaEntrega, cargarRegistro, guardarRegistro } = require("./generar");
 
 const fechaHoy = () => { const d = new Date(); return `${d.getFullYear()}/${String(d.getMonth()+1).padStart(2,"0")}/${String(d.getDate()).padStart(2,"0")}`; };
@@ -108,61 +107,6 @@ function evaluarAprendiz(a, sesiones, notaMin) {
 
 const ETIQUETA = { LLAMADO_1: "PRIMER LLAMADO DE ATENCIÓN", LLAMADO_2: "SEGUNDO LLAMADO DE ATENCIÓN",
   PLAN_MEJORAMIENTO: "PLAN DE MEJORAMIENTO", INFORME_COMITE: "INFORME A COMITÉ DE EVALUACIÓN Y SEGUIMIENTO" };
-
-// ===== Descripción de las evidencias pendientes =====
-// Lee la carpeta actividades/ de la ficha y devuelve una descripción breve de
-// cada actividad que el aprendiz quedó debiendo, para el numeral 1.1 del acta.
-// - Primero consulta el caché de estado_ficha.json (sin costo ni demora).
-// - Solo si falta, invoca resumir-cli.js, que lee el PDF y lo resume una vez.
-// - Si algo falla, devuelve [] y el acta sale como siempre: nunca bloquea.
-// Memoria de la corrida: recuerda TANTO los aciertos COMO los fallos, para que
-// una actividad se intente UNA sola vez aunque la deban 20 aprendices.
-// Sin esto, una actividad sin PDF (o con la IA caída) relanzaba un proceso Node
-// por cada aprendiz, con la consiguiente lentitud.
-const cacheCorrida = new Map();          // "carpeta|ACTIVIDAD" -> texto | null
-const ESPERA_RESUMEN = 25000;            // ms: si tarda más, se sigue sin descripción
-
-function descripcionesDeActividades(carpetaFicha, referencias) {
-  const unicas = [...new Set(referencias.filter(Boolean).map(r => String(r).trim()))];
-  if (!unicas.length) return [];
-  const salida = [];
-
-  // Caché persistente de la ficha (lo que ya resumió la IA en corridas anteriores)
-  let cacheFicha = {};
-  try {
-    cacheFicha = JSON.parse(fs.readFileSync(path.join(carpetaFicha, "estado_ficha.json"), "utf8"))
-      .resumenes_actividades || {};
-  } catch { cacheFicha = {}; }
-
-  for (const ref of unicas) {
-    const clave = ref.toUpperCase();
-    const llave = `${carpetaFicha}|${clave}`;
-
-    // 1) ¿ya se resolvió en esta corrida? (incluye los fallos: no se reintenta)
-    if (cacheCorrida.has(llave)) {
-      const v = cacheCorrida.get(llave);
-      if (v) salida.push(`${ref}: ${v}`);
-      continue;
-    }
-    // 2) ¿está en el caché persistente de la ficha?
-    if (cacheFicha[clave]?.resumen) {
-      cacheCorrida.set(llave, cacheFicha[clave].resumen);
-      salida.push(`${ref}: ${cacheFicha[clave].resumen}`);
-      continue;
-    }
-    // 3) hay que pedirlo a la IA: se intenta UNA vez y se recuerda el resultado
-    let texto = null;
-    try {
-      const out = execFileSync(process.execPath, [path.join(__dirname, "resumir-cli.js"), carpetaFicha, ref],
-        { encoding: "utf8", timeout: ESPERA_RESUMEN });
-      const r = JSON.parse(out.trim().split("\n").pop());
-      if (r.ok && r.resumen) texto = r.resumen;
-    } catch { /* sin descripción: el acta sale con el texto estándar */ }
-    cacheCorrida.set(llave, texto);
-    if (texto) salida.push(`${ref}: ${texto}`);
-  }
-  return salida;
-}
 
 function resumenMotivos(incidentes) {
   const c = { INASISTENCIA: 0, NO_PRESENTO: 0, NOTA_BAJA: 0, RETARDOS: 0 };
@@ -276,16 +220,15 @@ function procesarControl(ruta, forzar = false, simular = false) {
         continue;
       }
 
-      // Descripción de las evidencias pendientes (numeral 1.1 del acta)
-      const descripcion_actividades = descripcionesDeActividades(
-        path.dirname(ruta), incidentes.filter(i => i.actividad).map(i => i.actividad));
-
       const { buffer, tipo, numero } = generarActa({
         ficha: params.ficha, programa: params.programa, competencia: params.competencia,
         regional: params.regional, centro: params.centro, lugar: params.lugar,
         ciudad: "Mosquera, Cundinamarca", instructor: params.instructor,
         aprendiz: { nombre: a.nombre, documento: a.documento, correo: a.correo },
-        incidentes, descripcion_actividades,
+        incidentes,
+        // descripcion_actividades: pendiente. Vendrá de la hoja DESCRIPCIONES del
+        // control (ver ENCARGO_INICIAL.md, punto 2), que reemplaza el resumen que
+        // antes generaba la IA a partir del PDF de la actividad.
       });
       fs.mkdirSync(carpetaActas, { recursive: true });
       const prefijo = tipo === "INFORME_COMITE" ? "INFORME_COMITE" : "ACTA";

@@ -59,7 +59,7 @@ function registrarActa(estado, acta) {
   return estado;
 }
 
-// Clasificación heurística de los archivos de la carpeta (el agente IA es el respaldo)
+// Clasificación heurística de los archivos de la carpeta
 function clasificarArchivos(carpetaFicha) {
   const items = fs.readdirSync(carpetaFicha, { withFileTypes: true });
   const clas = { control: null, reporte_aprendices: null, horario: null,

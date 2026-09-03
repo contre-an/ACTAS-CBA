@@ -83,7 +83,9 @@ function construirContenido(d, tipo, numero) {
   const desarrollo = [
     { texto: `1. VERIFICACIÓN: El instructor ${d.instructor.nombre} verificó el registro de asistencia y el control de evidencias de aprendizaje de la competencia ${d.competencia} del programa ${d.programa}, ficha ${d.ficha}, identificando respecto del aprendiz ${d.aprendiz.nombre} (documento ${d.aprendiz.documento}) las siguientes situaciones:` },
     ...hechos,
-    // [IA — Módulo 3] Descripción detallada de las evidencias pendientes (opcional)
+    // Descripción detallada de las evidencias pendientes (opcional). Hoy la
+    // escribe el instructor en la hoja DESCRIPCIONES del control; antes la
+    // generaba la IA a partir del PDF de la actividad.
     ...(d.descripcion_actividades && d.descripcion_actividades.length
       ? [{ texto: `1.1. DESCRIPCIÓN DE LAS EVIDENCIAS DE APRENDIZAJE PENDIENTES: Para plena claridad del aprendiz y en garantía del debido proceso, se describe el contenido y alcance de cada evidencia pendiente: ${d.descripcion_actividades.join(" ")}` }]
       : []),
@@ -95,14 +97,12 @@ function construirContenido(d, tipo, numero) {
     desarrollo.push({ texto: `4. MEDIDA FORMATIVA: En consecuencia, se efectúa el PRIMER LLAMADO DE ATENCIÓN ACADÉMICO por escrito (${T.norma}), medida de carácter pedagógico y no sancionatorio. Se advierte al aprendiz que el reglamento contempla hasta dos (2) llamados de atención por fase del proyecto formativo y que, de persistir la situación, el segundo llamado irá acompañado de orientaciones académicas escritas y, agotados ambos, procederá el plan de mejoramiento académico.` });
   }
   if (tipo === "LLAMADO_2") {
-    // [IA — Módulo 3] Si vienen orientaciones personalizadas, se usan; si no, las genéricas de siempre
-    const orientaciones = d.orientaciones_ia
-      ? `${d.orientaciones_ia.replace(/\n+/g, " ")} Adicionalmente: asistir puntualmente a todas las sesiones de formación y, ante cualquier imposibilidad, reportar y soportar la justificación dentro de los términos del Artículo 28.`
-      : `a) Presentar en el Google Classroom de la competencia las evidencias pendientes ${actividadesPendientes ? `(${actividadesPendientes}) ` : ""}en la fecha concertada en los compromisos de la presente acta; b) Asistir puntualmente a todas las sesiones de formación y, ante cualquier imposibilidad, reportar y soportar la justificación dentro de los términos del Artículo 28; c) Solicitar al instructor las asesorías o explicaciones adicionales que requiera para superar los resultados de aprendizaje; d) Revisar la guía de aprendizaje y los criterios de evaluación de cada evidencia antes de su entrega.`;
+    const orientaciones = `a) Presentar en el Google Classroom de la competencia las evidencias pendientes ${actividadesPendientes ? `(${actividadesPendientes}) ` : ""}en la fecha concertada en los compromisos de la presente acta; b) Asistir puntualmente a todas las sesiones de formación y, ante cualquier imposibilidad, reportar y soportar la justificación dentro de los términos del Artículo 28; c) Solicitar al instructor las asesorías o explicaciones adicionales que requiera para superar los resultados de aprendizaje; d) Revisar la guía de aprendizaje y los criterios de evaluación de cada evidencia antes de su entrega.`;
     desarrollo.push({ texto: `4. MEDIDA FORMATIVA: En consecuencia, se efectúa el SEGUNDO LLAMADO DE ATENCIÓN ACADÉMICO por escrito (${T.norma}), el cual, conforme al reglamento, se acompaña de las siguientes ORIENTACIONES ACADÉMICAS ESCRITAS basadas en estrategias pedagógicas, de acatamiento inmediato: ${orientaciones} Se advierte al aprendiz que, agotados los dos (2) llamados de atención, de persistir la situación se establecerá un plan de mejoramiento académico.` });
   }
   if (tipo === "PLAN_MEJORAMIENTO") {
-    // [IA — Módulo 4] Cita del acta de equipo ejecutor cuando existe
+    // Cita del acta de equipo ejecutor cuando existe (dato de la ficha; ver
+    // equipo_ejecutor/acta_equipo_ejecutor en estado.js)
     const citaEquipo = d.acta_equipo
       ? `, según decisión del equipo ejecutor de la ficha consignada en el Acta No. ${d.acta_equipo.numero} del ${d.acta_equipo.fecha},`
       : "";
