@@ -38,6 +38,11 @@ function leerControl(ruta) {
     if (!real) throw new Error(`El archivo no tiene la hoja ${n}: ${path.basename(ruta)}`);
     return XLSX.utils.sheet_to_json(wb.Sheets[real], { header: 1, defval: null });
   };
+  // Como hoja(), pero sin lanzar error si la hoja no existe (para hojas opcionales).
+  const hojaOpcional = n => {
+    const real = wb.SheetNames.find(s => norm(s) === n);
+    return real ? XLSX.utils.sheet_to_json(wb.Sheets[real], { header: 1, defval: null }) : null;
+  };
   // PARAMETROS (clave/valor)
   const P = {};
   for (const fila of hoja("PARAMETROS")) if (fila[0] != null && fila[1] != null) P[norm(fila[0])] = fila[1];
@@ -72,7 +77,25 @@ function leerControl(ruta) {
       notas: sesiones.map(s => not_[r]?.[s.col] ?? null),
     });
   }
-  return { params, sesiones, aprendices };
+
+  // ===== DESCRIPCIONES: texto que el instructor escribe para cada actividad =====
+  // Hoja opcional de dos columnas (actividad, descripción). La columna
+  // "actividad" debe coincidir con el nombre que ya aparece en el encabezado
+  // de la hoja NOTAS; el instructor solo redacta el texto. Reemplaza el
+  // resumen que antes generaba la IA a partir del PDF de la actividad, para
+  // el numeral 1.1 del acta. Si la hoja no existe, el acta sale sin ese
+  // numeral, igual que siempre.
+  const descripciones = {};
+  const desc = hojaOpcional("DESCRIPCIONES");
+  if (desc) {
+    for (let r = 1; r < desc.length; r++) {
+      const actividad = desc[r]?.[0], texto = desc[r]?.[1];
+      if (actividad != null && texto != null && String(texto).trim())
+        descripciones[norm(actividad)] = String(texto).trim();
+    }
+  }
+
+  return { params, sesiones, aprendices, descripciones };
 }
 
 // Reglas por sesion -> incidentes y retardos (con fecha Date)
@@ -165,7 +188,7 @@ function registrarEnHistorico(ruta, fila) {
 // simular = true -> evalua TODO igual pero NO genera archivos, NO toca el
 // registro y NO escribe en el HISTORICO. Sirve para la vista previa.
 function procesarControl(ruta, forzar = false, simular = false) {
-  const { params, sesiones, aprendices } = leerControl(ruta);
+  const { params, sesiones, aprendices, descripciones } = leerControl(ruta);
   if (!params.procesar && !forzar) {
     return { archivo: path.basename(ruta), ficha: params.ficha, programa: params.programa,
              omitida: true, mensaje: "OMITIDA (PROCESAR EN AUTOMATIZACIÓN = NO o ausente en PARAMETROS)" };
@@ -220,15 +243,21 @@ function procesarControl(ruta, forzar = false, simular = false) {
         continue;
       }
 
+      // Descripción de las evidencias pendientes (numeral 1.1 del acta), tomada
+      // de la hoja DESCRIPCIONES que redacta el instructor (ver leerControl).
+      // Si una actividad no tiene descripción escrita, simplemente no aparece:
+      // el acta sale igual, sin ese renglón.
+      const actividadesPendientes = [...new Set(incidentes.filter(i => i.actividad).map(i => i.actividad))];
+      const descripcion_actividades = actividadesPendientes
+        .filter(act => descripciones[norm(act)])
+        .map(act => `${act}: ${descripciones[norm(act)]}`);
+
       const { buffer, tipo, numero } = generarActa({
         ficha: params.ficha, programa: params.programa, competencia: params.competencia,
         regional: params.regional, centro: params.centro, lugar: params.lugar,
         ciudad: "Mosquera, Cundinamarca", instructor: params.instructor,
         aprendiz: { nombre: a.nombre, documento: a.documento, correo: a.correo },
-        incidentes,
-        // descripcion_actividades: pendiente. Vendrá de la hoja DESCRIPCIONES del
-        // control (ver ENCARGO_INICIAL.md, punto 2), que reemplaza el resumen que
-        // antes generaba la IA a partir del PDF de la actividad.
+        incidentes, descripcion_actividades,
       });
       fs.mkdirSync(carpetaActas, { recursive: true });
       const prefijo = tipo === "INFORME_COMITE" ? "INFORME_COMITE" : "ACTA";
