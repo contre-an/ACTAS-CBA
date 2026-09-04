@@ -9,16 +9,17 @@ que cambie una pieza o se resuelva uno de los pendientes de abajo.
 | Módulo | Responsabilidad | Toca archivos |
 |---|---|---|
 | `estado.js` | Memoria por ficha (`estado_ficha.json`): clasifica los archivos de la carpeta de una ficha, resuelve cuál es el control real. | Lee/escribe `estado_ficha.json` en la carpeta de cada ficha. |
-| `horario.js` | Extrae del horario en PDF: ficha, trimestre, fechas, programa, y por sesión competencia/RAP/instructor/jefe de grupo/día/hora/sede/ambiente — de TODOS los instructores de la ficha. Es insumo del acta de equipo ejecutor (otro documento, sin construir), **no** de PARAMETROS: cada control es de un solo instructor y una sola competencia, eso lo escribe el instructor a mano. | Solo lee el PDF. No escribe nada. |
+| `horario.js` | Extrae del horario en PDF: ficha, trimestre, fechas, programa, y por sesión competencia/RAP/instructor/jefe de grupo/día/hora/sede/ambiente — de TODOS los instructores de la ficha. Es insumo de `equipo_ejecutor.js`, **no** de PARAMETROS: cada control es de un solo instructor y una sola competencia, eso lo escribe el instructor a mano. | Solo lee el PDF. No escribe nada. |
 | `sofia.js` | Migra el reporte de SOFIA a la hoja APRENDICES del control (con la corrección EN INDUCCIÓN → EN FORMACION). | Lee el `.xls`/`.xlsx` de SOFIA; escribe (opcional, con vista previa) la hoja APRENDICES del control. |
-| `procesar.js` | Motor de reglas del Acuerdo 009: lee el control, evalúa incidentes por aprendiz, decide la medida (escalamiento), arma el acta de entrega, escribe HISTORICO. | Lee el control completo; escribe archivos `.docx` en `LLAMADOS DE ATENCION/`; escribe HISTORICO del control. |
-| `generar.js` | Renderiza las plantillas `.docx` (docxtemplater) y lleva la numeración consecutiva y el escalamiento por aprendiz. | Lee `plantilla/*.docx`; lee/escribe `registro.json`. |
+| `procesar.js` | Motor de reglas del Acuerdo 009: lee el control, evalúa incidentes por aprendiz, decide la medida (escalamiento), arma el acta de entrega, escribe HISTORICO. Avisa si falta documento/correo del instructor en PARAMETROS. Expone `evaluarAprendiz`, `recibeLlamado`, `categoriaDe`/`CATEGORIAS` y `norm` para que otros módulos (`equipo_ejecutor.js`) no dupliquen reglas. | Lee el control completo; escribe archivos `.docx` en `LLAMADOS DE ATENCION/`; escribe HISTORICO del control. |
+| `generar.js` | Renderiza las plantillas `.docx` (docxtemplater) y lleva la numeración consecutiva y el escalamiento por aprendiz. Las actas de llamados/plan y la de equipo ejecutor comparten la MISMA plantilla (GOR-F-084): lo que cambia es el contenido, no el archivo. | Lee `plantilla/*.docx`; lee/escribe `registro.json`. |
+| `equipo_ejecutor.js` | Arma el acta de equipo ejecutor: junta `horario.js` (instructores/competencias de la ficha) con UN control (panorama de aprendices) y compone, SOLO en la fila del instructor que la genera, sus propias novedades (inasistencias, evidencias no presentadas, notas bajas, llegadas tarde) de sus aprendices EN FORMACION. Las demás filas quedan vacías: no hay acceso cruzado a los controles de los otros instructores, ni lo habrá. | Solo lee (horario PDF + un control); escribe el `.docx` en la carpeta que se le indique. |
 | `revertir.js` | Deshace lo generado en una fecha: borra `.docx`, limpia HISTORICO, recalcula consecutivo, respalda antes de tocar nada. | Lee/escribe `registro.json` y el control; borra archivos en `LLAMADOS DE ATENCION/`. |
 
 `registro.json` es el único estado que cruza fichas (consecutivo global,
 escalamiento por `ficha-documento`). `estado_ficha.json` es memoria local de
 una carpeta y no debería duplicar nada que ya viva en `registro.json` (ver
-pendiente 6).
+pendiente 7).
 
 ## Flujos ya construidos y probados
 
@@ -26,10 +27,16 @@ pendiente 6).
   `procesar.js → procesarControl(ruta, forzar, simular)`. El tipo de medida
   se decide solo, mirando `registro.json` (no lo elige quien aprieta el
   botón). Tiene vista previa (`simular=true`) que no toca nada.
-- **Acta de entrega de ficha**: `procesar.js → generarEntregaControl(ruta)`
-  (hoy solo accesible por dentro de `generarEntregas(carpeta)`, que procesa
-  una carpeta entera).
+- **Acta de entrega de ficha**: `procesar.js → generarEntregaControl(ruta, simular)`
+  (también accesible en lote con `generarEntregas(carpeta, simular)`, que
+  procesa una carpeta entera). Tiene vista previa igual que `procesarControl`.
+- **Acta de equipo ejecutor**: `equipo_ejecutor.js → prepararActaEquipoEjecutor(opciones, {simular})`.
+  Necesita el horario en PDF, un control de la ficha (para el panorama) y los
+  datos de la reunión (fecha/hora/lugar — no se pueden inventar).
 - **Reversión**: `revertir.js → revertirFecha(carpetaFicha, fecha, {simular})`.
+  Ya sabe deshacer actas de aprendiz individuales y el acta de entrega
+  (`reg.entregas`). **No sabe nada de `reg.equipoEjecutor`** (estructura
+  nueva de este commit) — ver pendiente 5.
 
 ## Flujo nuevo: "Inicializar trimestre" (conecta horario.js + sofia.js)
 
@@ -54,17 +61,16 @@ implemente de punta a punta — hoy son piezas sueltas. Así se conectarían:
 6. `estado.js → estadoNuevo(ficha)` + `guardarEstado(carpetaFicha, estado)`
    para dejar registrado `aprendices_migrados: true` y `total_aprendices`.
 
-`horario.js` no interviene en este flujo: su único consumidor es el acta de
-equipo ejecutor (los varios instructores de la ficha), un documento aparte
-que todavía no se construye.
+`horario.js` no interviene en este flujo: su único consumidor es
+`equipo_ejecutor.js` (los varios instructores de la ficha), ya construido.
 
 `registro.json` no se toca en este flujo (es memoria de actas generadas, no
 de inicialización).
 
-## Flujo NO construido: "Convertir actas firmadas a PDF"
+## Flujo pendiente: "Convertir actas firmadas a PDF"
 
-Está en el alcance v1.0 pero no tiene ni diseño ni código todavía. Pendiente
-de una sesión aparte.
+Está en el alcance v1.0. El instructor ya tiene una solución propia probada
+(Word por automatización de PowerShell) — falta integrarla, no diseñarla.
 
 ## Vista previa antes de ejecutar (regla del encargo)
 
@@ -73,10 +79,11 @@ aprobación. Estado actual por función:
 
 | Función | ¿Tiene `simular`? |
 |---|---|
-| `procesarControl` | Sí |
+| `procesarControl` | Sí (default `false` — igual que `generarEntregaControl`, hay que pasarlo explícito) |
+| `generarEntregaControl` / `generarEntregas` | Sí (default `false`) |
+| `prepararActaEquipoEjecutor` | Sí (default `true`) |
 | `revertirFecha` | Sí (default `true`) |
 | `poblarAprendices` | Sí (default `true`) |
-| `generarEntregaControl` / `generarEntregas` | **No** — genera de una. Hay que agregarle vista previa antes de conectarla a un botón. |
 
 ## Pendientes / huecos identificados (para resolver antes o durante la interfaz)
 
@@ -97,16 +104,23 @@ aprobación. Estado actual por función:
    ejecutor, un documento aparte con su propia fuente — no para
    PARAMETROS. `horario.js` sigue siendo insumo de esa acta, no de
    PARAMETROS.
-3. **Documento y correo del instructor**: sigue pendiente para el flujo de
-   "inicializar trimestre" en general (más allá del acta de equipo
-   ejecutor): de dónde sale ese dato la primera vez que se arma un control
-   nuevo (¿el instructor lo escribe a mano en PARAMETROS antes de
-   procesar? Probablemente sí, ya que el control es suyo).
-4. **`generarEntregaControl` sin vista previa**: hay que agregarle un
-   parámetro `simular`, igual que tiene `procesarControl`, antes de
-   conectarla a un botón.
-5. **"Convertir actas firmadas a PDF"**: sin diseño.
-6. **Posible duplicación `estado_ficha.json` / `registro.json`**: ambos
+3. ~~**Documento y correo del instructor**~~ — **resuelto**: los escribe el
+   instructor a mano en PARAMETROS al armar el control. `avisosInstructor()`
+   (en `procesar.js`) avisa en la vista previa y en la generación real si
+   falta alguno, en `procesarControl` y en `generarEntregaControl`.
+4. ~~**`generarEntregaControl` sin vista previa**~~ — **resuelto**: ahora
+   tiene `simular` igual que `procesarControl`.
+5. **`revertirFecha` no conoce `reg.equipoEjecutor`**: sabe deshacer actas
+   de aprendiz y actas de entrega (`reg.entregas`), pero no la estructura
+   nueva que dejó `generarActaEquipoEjecutor` (`reg.equipoEjecutor[ficha]`,
+   un arreglo). Falta antes de ofrecer reversión del acta de equipo
+   ejecutor desde la interfaz.
+6. **"Convertir actas firmadas a PDF"**: pendiente, siguiente en la fila.
+   El instructor ya tiene una solución propia probada (Word por
+   automatización de PowerShell: convierte solo los `.docx` sin `.pdf`
+   correspondiente, no toca los originales, exige que Word esté cerrado) —
+   no hay que diseñarla de nuevo, solo integrarla cuando la pase.
+7. **Posible duplicación `estado_ficha.json` / `registro.json`**: ambos
    pueden terminar guardando quién es el instructor y qué se generó. Antes
    de que la interfaz dependa de los dos, aclarar cuál manda en caso de
    choque (probablemente `registro.json` para actas/consecutivo, y
