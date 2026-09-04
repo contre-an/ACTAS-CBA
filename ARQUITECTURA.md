@@ -4,6 +4,17 @@ Este documento no es código: es el mapa de cómo encajan los módulos que ya
 existen, para cuando se construya la interfaz Electron. Se actualiza cada vez
 que cambie una pieza o se resuelva uno de los pendientes de abajo.
 
+## Prueba de recorrido completo
+
+`pruebas/recorrido_completo.test.js` (`npm test`) encadena, contra una ficha
+ficticia (9000001, sin ningún dato real), todo el ciclo: migrar desde SOFIA,
+llamados 1 y 2, la comprobación de que repetir una corrida da cero, escalar
+hasta comité, el acta de equipo ejecutor, revertir, volver a dar cero, y
+convertir a PDF. Corre aislada del `registro.json` real del proyecto
+(`ACTAS_REGISTRO_RUTA`). **Cualquier cambio a `procesar.js`, `generar.js`,
+`revertir.js`, `sofia.js` o `equipo_ejecutor.js` debería correrla antes de
+darse por bueno.**
+
 ## Módulos y su responsabilidad
 
 | Módulo | Responsabilidad | Toca archivos |
