@@ -15,6 +15,7 @@ que cambie una pieza o se resuelva uno de los pendientes de abajo.
 | `generar.js` | Renderiza las plantillas `.docx` (docxtemplater) y lleva la numeración consecutiva y el escalamiento por aprendiz. Las actas de llamados/plan y la de equipo ejecutor comparten la MISMA plantilla (GOR-F-084): lo que cambia es el contenido, no el archivo. | Lee `plantilla/*.docx`; lee/escribe `registro.json`. |
 | `equipo_ejecutor.js` | Arma el acta de equipo ejecutor: junta `horario.js` (instructores/competencias de la ficha) con UN control (panorama de aprendices) y compone, SOLO en la fila del instructor que la genera, sus propias novedades (inasistencias, evidencias no presentadas, notas bajas, llegadas tarde) de sus aprendices EN FORMACION. Las demás filas quedan vacías: no hay acceso cruzado a los controles de los otros instructores, ni lo habrá. | Solo lee (horario PDF + un control); escribe el `.docx` en la carpeta que se le indique. |
 | `revertir.js` | Deshace lo generado en una fecha: borra `.docx`, limpia HISTORICO, recalcula consecutivo, respalda antes de tocar nada. | Lee/escribe `registro.json` y el control; borra archivos en `LLAMADOS DE ATENCION/`. |
+| `convertir_pdf.js` | Convierte a PDF los `.docx` firmados que aún no tienen su PDF (solución del instructor, ya probada en producción: Word por automatización de PowerShell). Detecta si Word está instalado (única dependencia externa de toda la app) y si ya está abierto (aviso, no bloqueo). | Lee la carpeta que se le indique; escribe los `.pdf` al lado de cada `.docx`. Nunca toca los `.docx` (abre en solo lectura). |
 
 `registro.json` es el único estado que cruza fichas (consecutivo global,
 escalamiento por `ficha-documento`). `estado_ficha.json` es memoria local de
@@ -33,6 +34,9 @@ pendiente 7).
 - **Acta de equipo ejecutor**: `equipo_ejecutor.js → prepararActaEquipoEjecutor(opciones, {simular})`.
   Necesita el horario en PDF, un control de la ficha (para el panorama) y los
   datos de la reunión (fecha/hora/lugar — no se pueden inventar).
+- **Convertir actas firmadas a PDF**: `convertir_pdf.js → convertirPdf(carpeta, {simular})`.
+  Requiere Word instalado (única dependencia externa de la app); avisa si
+  Word ya está abierto (no bloquea, pero el instructor debe cerrarlo antes).
 - **Reversión**: `revertir.js → revertirFecha(carpetaFicha, fecha, {simular})`.
   Ya sabe deshacer actas de aprendiz individuales y el acta de entrega
   (`reg.entregas`). **No sabe nada de `reg.equipoEjecutor`** (estructura
@@ -67,11 +71,6 @@ implemente de punta a punta — hoy son piezas sueltas. Así se conectarían:
 `registro.json` no se toca en este flujo (es memoria de actas generadas, no
 de inicialización).
 
-## Flujo pendiente: "Convertir actas firmadas a PDF"
-
-Está en el alcance v1.0. El instructor ya tiene una solución propia probada
-(Word por automatización de PowerShell) — falta integrarla, no diseñarla.
-
 ## Vista previa antes de ejecutar (regla del encargo)
 
 Todo lo que genera o borra documentos debe mostrar vista previa y pedir
@@ -84,6 +83,7 @@ aprobación. Estado actual por función:
 | `prepararActaEquipoEjecutor` | Sí (default `true`) |
 | `revertirFecha` | Sí (default `true`) |
 | `poblarAprendices` | Sí (default `true`) |
+| `convertirPdf` | Sí (default `true`) |
 
 ## Pendientes / huecos identificados (para resolver antes o durante la interfaz)
 
@@ -110,19 +110,23 @@ aprobación. Estado actual por función:
    falta alguno, en `procesarControl` y en `generarEntregaControl`.
 4. ~~**`generarEntregaControl` sin vista previa**~~ — **resuelto**: ahora
    tiene `simular` igual que `procesarControl`.
-5. **`revertirFecha` no conoce `reg.equipoEjecutor`**: sabe deshacer actas
-   de aprendiz y actas de entrega (`reg.entregas`), pero no la estructura
-   nueva que dejó `generarActaEquipoEjecutor` (`reg.equipoEjecutor[ficha]`,
-   un arreglo). Falta antes de ofrecer reversión del acta de equipo
-   ejecutor desde la interfaz.
-6. **"Convertir actas firmadas a PDF"**: pendiente, siguiente en la fila.
-   El instructor ya tiene una solución propia probada (Word por
-   automatización de PowerShell: convierte solo los `.docx` sin `.pdf`
-   correspondiente, no toca los originales, exige que Word esté cerrado) —
-   no hay que diseñarla de nuevo, solo integrarla cuando la pase.
-7. **Posible duplicación `estado_ficha.json` / `registro.json`**: ambos
-   pueden terminar guardando quién es el instructor y qué se generó. Antes
-   de que la interfaz dependa de los dos, aclarar cuál manda en caso de
-   choque (probablemente `registro.json` para actas/consecutivo, y
-   `estado_ficha.json` solo para lo que no depende de escalamiento —
-   `equipo_ejecutor`, `archivos_detectados`).
+5. **`revertirFecha` no sabe deshacer el acta de equipo ejecutor** — más
+   grande de lo que parecía al anotarlo (ver aclaración del instructor,
+   pendiente hasta retomarlo con contexto completo):
+   - El acta de equipo ejecutor **no vive en `registro.json`** como las
+     demás (a diferencia de lo que hace hoy `generarActaEquipoEjecutor`,
+     que le agregó `reg.equipoEjecutor[ficha]` — eso puede estar mal
+     ubicado). Vive en **`estado_ficha.json`**.
+   - Esa reunión puede haber **autorizado deserciones** de aprendices, que
+     también habría que revertir junto con el acta si la reunión se
+     deshace — no es solo borrar un `.docx` y una fila de HISTORICO.
+   - No tocar esto hasta que el instructor dé el contexto completo.
+6. ~~**"Convertir actas firmadas a PDF"**~~ — **resuelto**:
+   `convertir_pdf.js`, envolviendo (sin rediseñar) la solución del
+   instructor ya probada en producción (Word por automatización de
+   PowerShell). Detecta Word instalado y si ya está abierto.
+7. **Posible duplicación `estado_ficha.json` / `registro.json`**: ligado al
+   punto 5 — el acta de equipo ejecutor demuestra que esto ya no es
+   hipotético: `generarActaEquipoEjecutor` guarda en `registro.json` un
+   dato que en realidad pertenece a `estado_ficha.json`. Aclarar cuál
+   manda en caso de choque antes de que la interfaz dependa de los dos.
