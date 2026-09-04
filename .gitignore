@@ -14,6 +14,10 @@ estado_ficha.json
 Thumbs.db
 .DS_Store
 
-# Datos reales de aprendices (PII / disciplinarios) usados como prueba local:
-# nunca deben quedar en el historial de git.
+# Datos reales de aprendices e instructores (PII) usados como prueba local:
+# nunca deben quedar en el historial de git (mismo criterio del commit inicial).
 CONTROL_ASISTENCIA*.xlsx
+HORARIOS*.pdf
+
+# Estado local de herramientas (Claude Code), no es parte del proyecto.
+.claude/

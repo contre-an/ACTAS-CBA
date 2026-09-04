@@ -7,6 +7,7 @@
   "license": "UNLICENSED",
   "dependencies": {
     "docxtemplater": "^3.65.2",
+    "pdfjs-dist": "5.4.296",
     "pizzip": "^3.2.0",
     "xlsx": "https://cdn.sheetjs.com/xlsx-0.20.3/xlsx-0.20.3.tgz"
   }
