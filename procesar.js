@@ -231,6 +231,15 @@ function procesarControl(ruta, forzar = false, simular = false) {
       if (!incidentes.length) { resumen.sinNovedad++; continue; }
       incidentes.sort((x, y) => x.fechaD - y.fechaD);
 
+      // Actividades pendientes que este acta va a mencionar, y cuáles de esas
+      // NO tienen descripción escrita en la hoja DESCRIPCIONES. Se calcula
+      // ANTES de la vista previa a propósito: el instructor tiene que
+      // enterarse de esto antes de aprobar y firmar, no después.
+      const actividadesPendientes = [...new Set(incidentes.filter(i => i.actividad).map(i => i.actividad))];
+      const avisos = actividadesPendientes
+        .filter(act => !descripciones[norm(act)])
+        .map(act => `Actividad "${act}" no tiene descripción; el acta saldrá sin ella.`);
+
       // VISTA PREVIA: se informa lo que se haria, sin generar ni registrar nada
       if (simular) {
         const ap = estado.llamados || 0, pl = estado.planes || 0;
@@ -239,15 +248,15 @@ function procesarControl(ruta, forzar = false, simular = false) {
         resumen.casos.push({ aprendiz: a.nombre, documento: a.documento,
           medida: tipoPrevisto, motivos: incidentes.length,
           detalle: incidentes.map(i => i.tipo === "RETARDOS"
-            ? `${i.fecha}: 2 retardos` : `${i.fecha}: ${i.tipo}${i.actividad ? " (" + i.actividad + ")" : ""}`) });
+            ? `${i.fecha}: 2 retardos` : `${i.fecha}: ${i.tipo}${i.actividad ? " (" + i.actividad + ")" : ""}`),
+          ...(avisos.length ? { avisos } : {}) });
         continue;
       }
 
       // Descripción de las evidencias pendientes (numeral 1.1 del acta), tomada
       // de la hoja DESCRIPCIONES que redacta el instructor (ver leerControl).
       // Si una actividad no tiene descripción escrita, simplemente no aparece:
-      // el acta sale igual, sin ese renglón.
-      const actividadesPendientes = [...new Set(incidentes.filter(i => i.actividad).map(i => i.actividad))];
+      // el acta sale igual, sin ese renglón (y ya quedó avisado arriba).
       const descripcion_actividades = actividadesPendientes
         .filter(act => descripciones[norm(act)])
         .map(act => `${act}: ${descripciones[norm(act)]}`);
@@ -285,7 +294,7 @@ function procesarControl(ruta, forzar = false, simular = false) {
       ap2.retardosPendientes = sobrantes.map(iso);
       reg2.aprendices[clave] = ap2; guardarRegistro(reg2);
 
-      resumen.casos.push({ aprendiz: a.nombre, documento: a.documento, medida: tipo, acta: numero, archivo: nombreArchivo, motivos: incidentes.length, historico: histOk ? "registrado" : "PENDIENTE (cierra el Excel y reprocesa)" });
+      resumen.casos.push({ aprendiz: a.nombre, documento: a.documento, medida: tipo, acta: numero, archivo: nombreArchivo, motivos: incidentes.length, historico: histOk ? "registrado" : "PENDIENTE (cierra el Excel y reprocesa)", ...(avisos.length ? { avisos } : {}) });
     } catch (e) {
       if (e.codigo === "EN_COMITE") resumen.casos.push({ aprendiz: a.nombre, documento: a.documento, medida: "YA EN COMITÉ (sin documentos nuevos)", detalle: e.message });
       else resumen.errores.push(`${a.nombre}: ${e.message}`);
