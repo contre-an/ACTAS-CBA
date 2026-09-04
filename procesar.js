@@ -8,6 +8,17 @@ const { generarActa, generarActaEntrega, cargarRegistro, guardarRegistro } = req
 const fechaHoy = () => { const d = new Date(); return `${d.getFullYear()}/${String(d.getMonth()+1).padStart(2,"0")}/${String(d.getDate()).padStart(2,"0")}`; };
 const norm = s => String(s ?? "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/\s+/g, " ").trim().toUpperCase();
 
+// El documento y el correo del instructor los escribe el instructor a mano en
+// PARAMETROS; si falta alguno, el acta sale incompleta y es f\u00e1cil no darse
+// cuenta hasta despu\u00e9s de firmar. Se avisa en la vista previa (y tambi\u00e9n en
+// la generaci\u00f3n real, por si se salt\u00f3 la vista previa).
+function avisosInstructor(instructor) {
+  const avisos = [];
+  if (!instructor.documento) avisos.push("Falta el documento del instructor en PARAMETROS: el acta saldr\u00e1 incompleta.");
+  if (!instructor.correo) avisos.push("Falta el correo del instructor en PARAMETROS: el acta saldr\u00e1 incompleta.");
+  return avisos;
+}
+
 // ===== ESTADOS DEL APRENDIZ (Acuerdo 009 de 2024) =====
 // SOLO "EN FORMACION" recibe llamados de atencion. Los demas estados quedan
 // excluidos: el aprendiz ya no esta en formacion activa (CANCELADO, RETIRO
@@ -195,7 +206,7 @@ function procesarControl(ruta, forzar = false, simular = false) {
   }
   const carpetaActas = path.join(path.dirname(ruta), "LLAMADOS DE ATENCION");
   const resumen = { archivo: path.basename(ruta), ficha: params.ficha, programa: params.programa,
-                    casos: [], sinNovedad: 0, omitidos: [], errores: [] };
+                    casos: [], sinNovedad: 0, omitidos: [], errores: [], avisos: avisosInstructor(params.instructor) };
 
   for (const a of aprendices) {
     // Filtro por estado: solo EN FORMACION recibe llamados de atencion.
@@ -345,12 +356,17 @@ function categoriaDe(estado) {
   return "Otros";
 }
 
-function generarEntregaControl(ruta) {
+// simular = true -> calcula todo el panorama igual, pero NO genera el .docx,
+// NO toca el registro y NO escribe en el HISTORICO. Vista previa obligatoria
+// antes de generar (ninguna acción que genere documentos se ejecuta sin
+// aprobación).
+function generarEntregaControl(ruta, simular = false) {
   const { params, sesiones, aprendices } = leerControl(ruta);
   if (!params.generarEntrega) {
     return { archivo: path.basename(ruta), ficha: params.ficha, programa: params.programa,
              omitida: true, mensaje: "OMITIDA (GENERAR ACTA DE ENTREGA = NO o ausente)" };
   }
+  const avisos = avisosInstructor(params.instructor);
   const reg = cargarRegistro();
   const conteo = {};
   const evaluados = [], noEvaluados = [];
@@ -391,6 +407,16 @@ function generarEntregaControl(ruta) {
   const medidas = `Durante el periodo se aplicaron las medidas formativas del Artículo 46 del Acuerdo 009 de 2024 así: ${totLl1} primer(os) llamado(s) de atención, ${totLl2} segundo(s) llamado(s) con orientaciones académicas escritas, ${totPlanes} plan(es) de mejoramiento y ${totComite} informe(s) a Comité de Evaluación y Seguimiento${actasNums.length ? ` (actas Nos. ${actasNums.join(", ")})` : ""}. Todas las medidas cuentan con acta y constan en el HISTORICO del control de la ficha.`;
   const inasTexto = `En el control de asistencia de la ficha, espejo de lo registrado en SOFIA Plus, se registraron ${totalInasistencias} inasistencia(s) injustificada(s) en el periodo, discriminadas por aprendiz en el numeral 4 para quienes presentan novedades.`;
 
+  // VISTA PREVIA: se informa el panorama completo, sin generar ni registrar nada
+  if (simular) {
+    return { archivo: path.basename(ruta), ficha: params.ficha, programa: params.programa,
+             casos: [{ aprendiz: "ENTREGA DE FICHA", medida: "ACTA DE ENTREGA (vista previa)",
+                       evaluados: evaluados.length, no_evaluados: noEvaluados.length,
+                       panorama, medidas_texto: medidas, inasistencias_texto: inasTexto,
+                       ...(avisos.length ? { avisos } : {}) }],
+             sinNovedad: 0, errores: [] };
+  }
+
   const { buffer, numero } = generarActaEntrega({
     ficha: params.ficha, programa: params.programa, competencia: params.competencia,
     codigo_competencia: params.codigoCompetencia, jornada: params.jornada,
@@ -408,18 +434,19 @@ function generarEntregaControl(ruta) {
   return { archivo: path.basename(ruta), ficha: params.ficha, programa: params.programa,
            casos: [{ aprendiz: "ENTREGA DE FICHA", medida: "ACTA DE ENTREGA", acta: numero, archivo: nombreArchivo,
                      evaluados: evaluados.length, no_evaluados: noEvaluados.length,
-                     historico: histOk ? "registrado" : "PENDIENTE (cierra el Excel y reprocesa)" }],
+                     historico: histOk ? "registrado" : "PENDIENTE (cierra el Excel y reprocesa)",
+                     ...(avisos.length ? { avisos } : {}) }],
            sinNovedad: 0, errores: [] };
 }
 
-function generarEntregas(carpeta) {
+function generarEntregas(carpeta, simular = false) {
   if (!fs.existsSync(carpeta)) throw new Error(`No existe la carpeta: ${carpeta}`);
   const resultados = [];
   for (const archivo of buscarControles(carpeta)) {
-    try { resultados.push(generarEntregaControl(archivo)); }
+    try { resultados.push(generarEntregaControl(archivo, simular)); }
     catch (e) { resultados.push({ archivo: path.basename(archivo), error: e.message }); }
   }
   return resultados;
 }
 
-module.exports = { procesarControl, procesarTrimestre, generarEntregas, leerControl };
+module.exports = { procesarControl, procesarTrimestre, generarEntregaControl, generarEntregas, leerControl };
