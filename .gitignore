@@ -28,3 +28,6 @@ INFORME_COMITE_*.docx
 
 # Estado local de herramientas (Claude Code), no es parte del proyecto.
 .claude/
+
+# Carpeta de trabajo de las pruebas automatizadas (se recrea en cada corrida).
+pruebas/tmp/

@@ -5,6 +5,9 @@
   "description": "Generador de actas disciplinarias CBA (Acuerdo 009 de 2024) a partir del control de asistencia en Excel",
   "main": "procesar.js",
   "license": "UNLICENSED",
+  "scripts": {
+    "test": "node --test"
+  },
   "dependencies": {
     "docxtemplater": "^3.65.2",
     "pdfjs-dist": "5.4.296",
