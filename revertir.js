@@ -194,8 +194,11 @@ function revertirFecha(carpetaFicha, fecha, { simular = true } = {}) {
   const numerosARevertir = [...actasRevertidas.map(a => a.numero), ...(entregaRevertida ? [entregaRevertida.numero] : [])];
   reporte.historicoFilasEliminadas = quitarFilasHistorico(rutaControl, numerosARevertir);
 
-  // Respaldo del registro ANTES de sobrescribirlo
-  const REGISTRO = path.join(__dirname, "registro.json");
+  // Respaldo del registro ANTES de sobrescribirlo. Misma ruta que usa
+  // generar.js (respeta ACTAS_REGISTRO_RUTA si una prueba automatizada la fijó).
+  const REGISTRO = process.env.ACTAS_REGISTRO_RUTA
+    ? path.resolve(process.env.ACTAS_REGISTRO_RUTA)
+    : path.join(__dirname, "registro.json");
   if (fs.existsSync(REGISTRO)) {
     const respaldoRegistro = `${REGISTRO}.respaldo_${timestamp()}`;
     fs.copyFileSync(REGISTRO, respaldoRegistro);

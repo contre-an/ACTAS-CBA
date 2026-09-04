@@ -67,6 +67,9 @@ function panoramaDe(aprendices) {
  * @param {object} opciones
  * @param {string} opciones.rutaHorarioPdf horario de la ficha en PDF
  * @param {string} opciones.rutaControlPropio el control del instructor que genera el acta
+ * @param {object} [opciones.horario] resultado ya listo de leerHorario() (mismo formato
+ *   que devuelve horario.js): úsalo en vez de rutaHorarioPdf cuando ya se leyó el
+ *   horario antes, o en pruebas automatizadas que no dependen de un PDF real.
  * @param {string} opciones.carpetaSalida dónde queda el .docx (no es la carpeta de ningún
  *   control: el acta es de toda la ficha, no de un instructor)
  * @param {string} opciones.horaInicio "HH:MM" de la reunión (no se puede inventar)
@@ -81,7 +84,7 @@ async function prepararActaEquipoEjecutor(opciones, { simular = true } = {}) {
   if (!opciones.horaInicio || !opciones.horaFin)
     throw new Error("Falta horaInicio/horaFin de la reunión: no se pueden inventar, hay que darlos.");
 
-  const horario = await leerHorario(opciones.rutaHorarioPdf);
+  const horario = opciones.horario || await leerHorario(opciones.rutaHorarioPdf);
   if (horario.errores.length)
     throw new Error(`El horario tiene filas que no se pudieron leer; revísalo antes de generar el acta:\n${horario.errores.join("\n")}`);
 
