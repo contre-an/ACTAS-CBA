@@ -208,6 +208,91 @@ function construirActaEntrega(d, numero) {
   };
 }
 
+// ===== Acta de equipo ejecutor =====
+// Reúne a todos los instructores de una ficha (documento aparte del control
+// de asistencia; ver equipo_ejecutor.js, que arma `datos` a partir del
+// horario en PDF y del control del instructor que la genera). Usa la MISMA
+// plantilla GOR-F-084 que las demás actas: esta plantilla ya trae, además de
+// los campos comunes, las secciones opcionales `hay_panorama`/`panorama` y
+// `hay_novedades`/`novedades` (tablas), y el desarrollo partido en tres
+// tramos (`desarrollo`, `desarrollo2`, `desarrollo3`) para poder intercalar
+// esas dos tablas entre los numerales de texto.
+function construirActaEquipoEjecutor(d, numero) {
+  const fecha = d.fecha || fechaLarga();
+  const titulo = `REUNIÓN ORDINARIA DEL EQUIPO EJECUTOR — FICHA ${d.ficha}: SEGUIMIENTO Y NOVEDADES DE LA FORMACIÓN`;
+
+  const agenda = [
+    "Verificación de asistencia del equipo ejecutor.",
+    "Panorama general de la ficha: estado de los aprendices a la fecha.",
+    "Novedades académicas y disciplinarias de la ficha.",
+    "Compromisos y cierre.",
+  ].map((texto, i) => ({ numero: i + 1, texto }));
+
+  const objetivos = [{
+    numero: 1,
+    texto: `Realizar el seguimiento periódico de la ficha ${d.ficha} — ${d.programa}, conforme al Acuerdo 009 de 2024, por convocatoria de la Coordinación Académica.`,
+  }];
+
+  const desarrollo = [
+    { texto: `1. Se verifica la asistencia del equipo ejecutor de la ficha ${d.ficha}, conformado por los instructores relacionados en el listado de asistentes, bajo la jefatura de grupo de ${d.jefeGrupo}.` },
+    { texto: "2. PANORAMA GENERAL DE LA FICHA A LA FECHA:" },
+  ];
+  const desarrollo2 = [{ texto: "3. NOVEDADES DE LA FICHA:" }];
+  const desarrollo3 = [
+    { texto: `4. SÍNTESIS DE LAS NOVEDADES: ${d.sintesis || "El equipo ejecutor no reporta novedades adicionales relacionadas con situaciones académicas, convivenciales o administrativas que requieran atención por parte del comité en esta sesión."}` },
+    { texto: "5. Los asistentes se dan por enterados de las novedades presentadas y acuerdan continuar el seguimiento en los términos del Acuerdo 009 de 2024." },
+  ];
+
+  const conclusiones = [
+    { texto: "El equipo ejecutor conoce y avala el estado actual de la ficha y las novedades presentadas." },
+    ...(d.conclusionesExtra || []),
+  ].map((c, i) => ({ numero: i + 1, texto: c.texto || c }));
+
+  const compromisos = (d.compromisos && d.compromisos.length ? d.compromisos : [
+    { actividad: "Continuar el seguimiento académico y disciplinario de los aprendices relacionados en las novedades.", fecha: d.fechaCorta || fechaCorta(), responsable: "Equipo ejecutor" },
+  ]).map(c => ({ ...c, firma: "" }));
+
+  const asistentes = (d.filas || []).map(f => ({
+    nombre: `${f.esJefeGrupo ? `${f.instructor} (Instructor — Jefe de Grupo)` : `${f.instructor} (Instructor)`}`,
+    dependencia: `Competencia: ${f.competencia}`,
+    aprueba: "SI", observacion: "", firma: "",
+  }));
+
+  return {
+    numero_acta: numero,
+    nombre_reunion: titulo,
+    ciudad_fecha: `${d.ciudad || "Mosquera, Cundinamarca"}, ${fecha}`,
+    hora_inicio: d.horaInicio || "", hora_fin: d.horaFin || "",
+    lugar: d.lugar || "Centro de Biotecnología Agropecuaria — CBA",
+    regional_centro: `${d.regional || "REGIONAL CUNDINAMARCA"} / ${d.centro || "CENTRO DE BIOTECNOLOGÍA AGROPECUARIA"}`,
+    agenda, objetivos, desarrollo,
+    hay_panorama: !!(d.panorama && d.panorama.length),
+    panorama: d.panorama || [],
+    total_aprendices: d.totalAprendices ?? "",
+    desarrollo2,
+    hay_novedades: !!(d.filas && d.filas.length),
+    novedades: (d.filas || []).map(f => ({ competencia: f.competencia, instructor: f.instructor, observaciones: f.novedades || "" })),
+    desarrollo3,
+    conclusiones, compromisos, asistentes,
+    anexos: d.anexos || "Control de asistencia de la ficha y actas disciplinarias del periodo.",
+  };
+}
+
+function generarActaEquipoEjecutor(datos) {
+  const reg = cargarRegistro();
+  reg.consecutivo += 1;
+  const numero = String(reg.consecutivo).padStart(3, "0");
+  const zip = new PizZip(fs.readFileSync(PLANTILLA)); // misma plantilla GOR-F-084 de siempre
+  const doc = new Docxtemplater(zip, { paragraphLoop: true, linebreaks: true });
+  doc.render(construirActaEquipoEjecutor(datos, numero));
+  const buffer = doc.getZip().generate({ type: "nodebuffer", compression: "DEFLATE" });
+  reg.equipoEjecutor = reg.equipoEjecutor || {};
+  reg.equipoEjecutor[String(datos.ficha)] = reg.equipoEjecutor[String(datos.ficha)] || [];
+  reg.equipoEjecutor[String(datos.ficha)].push({ numero, fecha: datos.fechaCorta || fechaCorta() });
+  guardarRegistro(reg);
+  return { buffer, numero };
+}
+
 function generarActaEntrega(datos) {
   const reg = cargarRegistro();
   reg.consecutivo += 1;
@@ -263,4 +348,4 @@ function generarActa(datos) {
   return { buffer, tipo, numero };
 }
 
-module.exports = { generarActa, generarActaEntrega, cargarRegistro, guardarRegistro };
+module.exports = { generarActa, generarActaEntrega, generarActaEquipoEjecutor, cargarRegistro, guardarRegistro };

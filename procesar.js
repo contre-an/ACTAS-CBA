@@ -449,4 +449,8 @@ function generarEntregas(carpeta, simular = false) {
   return resultados;
 }
 
-module.exports = { procesarControl, procesarTrimestre, generarEntregaControl, generarEntregas, leerControl };
+module.exports = {
+  procesarControl, procesarTrimestre, generarEntregaControl, generarEntregas, leerControl,
+  // reutilizados por equipo_ejecutor.js, para no duplicar reglas ya escritas aquí
+  norm, evaluarAprendiz, recibeLlamado, categoriaDe, CATEGORIAS,
+};

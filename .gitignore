@@ -20,5 +20,11 @@ CONTROL_ASISTENCIA*.xlsx
 HORARIOS*.pdf
 Reporte de Aprendices*.xls*
 
+# Actas reales (generadas, o de referencia) con datos de aprendices reales:
+# nunca al repo, aunque queden sueltas en la raíz durante una prueba. Los
+# archivos *_PLANTILLA.docx en plantilla/ no calzan con este patrón.
+ACTA_*.docx
+INFORME_COMITE_*.docx
+
 # Estado local de herramientas (Claude Code), no es parte del proyecto.
 .claude/
