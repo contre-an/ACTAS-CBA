@@ -18,6 +18,7 @@ Thumbs.db
 # nunca deben quedar en el historial de git (mismo criterio del commit inicial).
 CONTROL_ASISTENCIA*.xlsx
 HORARIOS*.pdf
+Reporte de Aprendices*.xls*
 
 # Estado local de herramientas (Claude Code), no es parte del proyecto.
 .claude/
