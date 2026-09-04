@@ -22,7 +22,7 @@ const path = require("path");
 const { execFileSync, execSync } = require("child_process");
 
 function wordInstalado() {
-  try { execSync('reg query "HKCR\\Word.Application"', { stdio: "ignore" }); return true; }
+  try { execSync('reg query "HKCR\\Word.Application"', { stdio: "ignore", windowsHide: true }); return true; }
   catch { return false; }
 }
 
@@ -30,7 +30,7 @@ function wordInstalado() {
 // comportarse de forma inesperada. Hay que pedirle al instructor que lo
 // cierre antes de convertir.
 function wordEstaAbierto() {
-  try { return /WINWORD\.EXE/i.test(execSync('tasklist /FI "IMAGENAME eq WINWORD.EXE" /NH', { encoding: "utf8" })); }
+  try { return /WINWORD\.EXE/i.test(execSync('tasklist /FI "IMAGENAME eq WINWORD.EXE" /NH', { encoding: "utf8", windowsHide: true })); }
   catch { return false; }
 }
 
@@ -85,7 +85,7 @@ function convertirPdf(carpeta, { simular = true } = {}) {
 
   let salida;
   try {
-    salida = execFileSync("powershell", ["-NoProfile", "-ExecutionPolicy", "Bypass", "-File", rutaScript], { encoding: "utf8" });
+    salida = execFileSync("powershell", ["-NoProfile", "-ExecutionPolicy", "Bypass", "-File", rutaScript], { encoding: "utf8", windowsHide: true });
   } catch (e) {
     throw new Error(`Falló la conversión a PDF: ${e.stdout || e.message}`);
   } finally {
