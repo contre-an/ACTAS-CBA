@@ -3,15 +3,57 @@
   "version": "0.1.0",
   "private": true,
   "description": "Generador de actas disciplinarias CBA (Acuerdo 009 de 2024) a partir del control de asistencia en Excel",
-  "main": "procesar.js",
+  "main": "src/main/main.js",
   "license": "UNLICENSED",
   "scripts": {
-    "test": "node --test"
+    "test": "node --test",
+    "start": "electron .",
+    "dist": "electron-builder"
   },
   "dependencies": {
     "docxtemplater": "^3.65.2",
+    "electron-updater": "^6.8.9",
     "pdfjs-dist": "5.4.296",
     "pizzip": "^3.2.0",
     "xlsx": "https://cdn.sheetjs.com/xlsx-0.20.3/xlsx-0.20.3.tgz"
+  },
+  "devDependencies": {
+    "electron": "^44.2.0",
+    "electron-builder": "^26.15.3",
+    "playwright-core": "^1.63.0"
+  },
+  "build": {
+    "appId": "co.cba.actascba",
+    "productName": "Actas CBA",
+    "directories": {
+      "output": "dist"
+    },
+    "files": [
+      "src/**/*",
+      "procesar.js",
+      "generar.js",
+      "estado.js",
+      "revertir.js",
+      "horario.js",
+      "sofia.js",
+      "equipo_ejecutor.js",
+      "convertir_pdf.js",
+      "plantilla/**/*",
+      "PLANTILLA_MAESTRA_CONTROL_ASISTENCIA V3.xlsx",
+      "package.json",
+      "node_modules/**/*"
+    ],
+    "win": {
+      "target": "nsis"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true
+    },
+    "publish": {
+      "provider": "github",
+      "owner": "contre-an",
+      "repo": "ACTAS-CBA"
+    }
   }
 }

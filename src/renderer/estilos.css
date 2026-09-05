@@ -1,0 +1,98 @@
+:root {
+  --fondo: #f5f5f4;
+  --panel: #ffffff;
+  --borde: #d6d3d1;
+  --texto: #1c1917;
+  --texto-suave: #57534e;
+  --acento: #1d4ed8;
+  --acento-suave: #dbeafe;
+  --peligro: #b91c1c;
+  --exito: #15803d;
+  --aviso: #b45309;
+  --aviso-fondo: #fef3c7;
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  font-family: "Segoe UI", Arial, sans-serif;
+  background: var(--fondo);
+  color: var(--texto);
+  font-size: 14px;
+}
+
+header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 20px;
+  background: var(--panel);
+  border-bottom: 1px solid var(--borde);
+}
+header h1 { font-size: 18px; margin: 0; }
+.carpeta-trimestre { display: flex; align-items: center; gap: 10px; font-size: 13px; color: var(--texto-suave); }
+#ruta-trimestre { max-width: 480px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+main { padding: 16px 20px 40px; display: flex; flex-direction: column; gap: 16px; max-width: 1200px; margin: 0 auto; }
+
+.panel { background: var(--panel); border: 1px solid var(--borde); border-radius: 8px; padding: 16px; }
+.panel h2 { margin-top: 0; font-size: 15px; }
+
+.barra-acciones { display: flex; align-items: center; gap: 10px; margin-bottom: 12px; flex-wrap: wrap; }
+.contador { margin-left: auto; color: var(--texto-suave); font-size: 13px; }
+
+button {
+  font: inherit;
+  padding: 7px 14px;
+  border-radius: 6px;
+  border: 1px solid var(--borde);
+  background: var(--panel);
+  cursor: pointer;
+}
+button:hover:not(:disabled) { background: #f0f0ef; }
+button:disabled { opacity: 0.5; cursor: not-allowed; }
+button.principal { background: var(--acento); color: #fff; border-color: var(--acento); }
+button.principal:hover:not(:disabled) { background: #1e40af; }
+button.boton-peligro { background: var(--peligro); color: #fff; border-color: var(--peligro); }
+button.boton-peligro:hover:not(:disabled) { background: #991b1b; }
+#btn-generar-actas, #btn-generar-entrega, #btn-convertir-pdf { background: var(--acento); color: #fff; border-color: var(--acento); }
+#btn-generar-actas:hover:not(:disabled), #btn-generar-entrega:hover:not(:disabled), #btn-convertir-pdf:hover:not(:disabled) { background: #1e40af; }
+
+table { width: 100%; border-collapse: collapse; font-size: 13px; }
+th, td { text-align: left; padding: 6px 8px; border-bottom: 1px solid var(--borde); }
+th { color: var(--texto-suave); font-weight: 600; }
+tr.fila-error td { color: var(--peligro); }
+.mensaje-vacio { color: var(--texto-suave); font-style: italic; }
+
+details { border-top: 1px solid var(--borde); padding: 10px 0; }
+details:first-child { border-top: none; }
+summary { cursor: pointer; font-weight: 600; }
+.formulario { display: flex; flex-direction: column; gap: 10px; margin-top: 10px; max-width: 520px; }
+.formulario label { display: flex; flex-direction: column; gap: 4px; font-size: 13px; color: var(--texto-suave); }
+.formulario input, .formulario textarea { font: inherit; padding: 6px 8px; border-radius: 6px; border: 1px solid var(--borde); }
+.ayuda { font-size: 12px; color: var(--texto-suave); margin: 4px 0; }
+.fila-archivo { display: flex; gap: 8px; }
+.fila-archivo input { flex: 1; }
+
+.resultados { display: flex; flex-direction: column; gap: 10px; max-height: 360px; overflow-y: auto; }
+.resultado-bloque { border: 1px solid var(--borde); border-radius: 6px; padding: 10px; font-size: 13px; }
+.resultado-bloque h3 { margin: 0 0 6px; font-size: 13px; }
+.resultado-bloque ul { margin: 4px 0; padding-left: 20px; }
+.caso-medida { font-weight: 600; }
+.aviso { color: var(--aviso); background: var(--aviso-fondo); padding: 2px 6px; border-radius: 4px; display: inline-block; margin-top: 2px; }
+.error-texto { color: var(--peligro); }
+.exito-texto { color: var(--exito); }
+
+.modal-overlay {
+  position: fixed; inset: 0; background: rgba(0,0,0,0.45);
+  display: flex; align-items: center; justify-content: center; z-index: 10;
+}
+/* Sin esto, .modal-overlay{display:flex} (una clase) le gana en
+   especificidad al [hidden]{display:none} del navegador (un atributo), y el
+   modal se ve siempre así el JS le ponga el atributo hidden. */
+.modal-overlay[hidden] { display: none; }
+.modal { background: var(--panel); border-radius: 8px; padding: 20px; width: 640px; max-height: 80vh; display: flex; flex-direction: column; }
+.modal h2 { margin-top: 0; }
+.modal-contenido { overflow-y: auto; flex: 1; margin-bottom: 14px; }
+.modal-botones { display: flex; justify-content: flex-end; gap: 10px; }

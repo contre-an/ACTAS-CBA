@@ -1,0 +1,103 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<title>Actas CBA</title>
+<link rel="stylesheet" href="estilos.css">
+</head>
+<body>
+
+<header>
+  <h1>Actas CBA</h1>
+  <div class="carpeta-trimestre">
+    <span id="ruta-trimestre">Sin carpeta del trimestre seleccionada</span>
+    <button id="btn-cambiar-carpeta">Elegir carpeta del trimestre…</button>
+  </div>
+</header>
+
+<main>
+
+  <section class="panel">
+    <div class="barra-acciones">
+      <button id="btn-generar-actas" disabled>Generar actas</button>
+      <button id="btn-generar-entrega" disabled>Acta de entrega de ficha</button>
+      <button id="btn-convertir-pdf" disabled>Convertir a PDF</button>
+      <span id="contador-seleccion" class="contador">0 fichas seleccionadas</span>
+    </div>
+    <table id="tabla-fichas">
+      <thead>
+        <tr>
+          <th></th><th>Carpeta</th><th>Ficha</th><th>Programa</th><th>Competencia</th><th>Instructor</th><th></th>
+        </tr>
+      </thead>
+      <tbody id="cuerpo-fichas"></tbody>
+    </table>
+    <p id="mensaje-sin-fichas" class="mensaje-vacio" hidden>No hay carpetas de ficha en esta carpeta del trimestre.</p>
+  </section>
+
+  <section class="panel" id="panel-detalle" hidden>
+    <h2>Estado de la ficha</h2>
+    <div id="contenido-detalle"></div>
+    <button id="btn-cerrar-detalle">Cerrar</button>
+  </section>
+
+  <section class="panel">
+    <details>
+      <summary>Acta de equipo ejecutor</summary>
+      <div class="formulario">
+        <p class="ayuda">Usa la ficha marcada en la tabla de arriba (debe haber exactamente una).</p>
+        <label>Horario de la ficha (PDF)
+          <div class="fila-archivo"><input id="ee-horario" type="text" readonly placeholder="Sin elegir…"><button id="ee-btn-horario">Elegir…</button></div>
+        </label>
+        <label>Fecha de la reunión <input id="ee-fecha" type="text" placeholder="1 de agosto de 2026"></label>
+        <label>Hora inicio <input id="ee-hora-inicio" type="text" placeholder="08:00"></label>
+        <label>Hora fin <input id="ee-hora-fin" type="text" placeholder="09:00"></label>
+        <label>Lugar <input id="ee-lugar" type="text" placeholder="Centro de Biotecnología Agropecuaria — CBA"></label>
+        <label>Síntesis de cierre (opcional) <textarea id="ee-sintesis" rows="2"></textarea></label>
+        <button id="btn-generar-equipo-ejecutor">Generar acta de equipo ejecutor</button>
+      </div>
+    </details>
+
+    <details>
+      <summary>Revertir una fecha</summary>
+      <div class="formulario">
+        <p class="ayuda">Usa la ficha marcada en la tabla de arriba (debe haber exactamente una). Deshace TODO lo generado ese día para esa ficha.</p>
+        <label>Fecha a revertir <input id="rev-fecha" type="date"></label>
+        <button id="btn-revertir">Revertir</button>
+      </div>
+    </details>
+
+    <details>
+      <summary>Inicializar trimestre (ficha nueva)</summary>
+      <div class="formulario">
+        <p class="ayuda">Paso 1: crea el control desde la plantilla en blanco y lo abre para que llenes PARAMETROS a mano (ficha, competencia, instructor).</p>
+        <label>Nombre de la carpeta de la ficha <input id="init-nombre" type="text" placeholder="3479381 - CULTIVOS AGRICOLAS"></label>
+        <button id="btn-init-crear">Crear control desde la plantilla</button>
+        <p class="ayuda">Paso 2 (cuando ya llenaste PARAMETROS y guardaste): migra los aprendices desde el reporte de SOFIA. Usa la ficha marcada en la tabla de arriba.</p>
+        <div class="fila-archivo"><input id="init-sofia" type="text" readonly placeholder="Sin elegir…"><button id="init-btn-sofia">Elegir reporte de SOFIA…</button></div>
+        <button id="btn-init-migrar">Migrar aprendices</button>
+      </div>
+    </details>
+  </section>
+
+  <section class="panel">
+    <h2>Resultados</h2>
+    <div id="resultados" class="resultados"></div>
+  </section>
+
+</main>
+
+<div id="modal-overlay" class="modal-overlay" hidden>
+  <div class="modal">
+    <h2 id="modal-titulo"></h2>
+    <div id="modal-contenido" class="modal-contenido"></div>
+    <div class="modal-botones">
+      <button id="modal-cancelar">Cancelar</button>
+      <button id="modal-aprobar" class="boton-peligro">Aprobar y ejecutar</button>
+    </div>
+  </div>
+</div>
+
+<script src="app.js"></script>
+</body>
+</html>

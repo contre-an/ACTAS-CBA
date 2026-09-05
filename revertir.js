@@ -209,4 +209,4 @@ function revertirFecha(carpetaFicha, fecha, { simular = true } = {}) {
   return reporte;
 }
 
-module.exports = { revertirFecha, normalizarFecha };
+module.exports = { revertirFecha, normalizarFecha, buscarControlEnCarpeta };
