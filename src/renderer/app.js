@@ -92,6 +92,7 @@ async function mostrarEstadoFicha(f) {
     <p><strong>Actas generadas:</strong> ${estado.actas.length}</p>
     <ul>${estado.actas.map(a => `<li>${escapeHtml(a)}${estado.actasSinPdf.includes(a) ? ' <span class="aviso">sin PDF</span>' : ""}</li>`).join("") || "<li><em>ninguna</em></li>"}</ul>
     ${estado.estadoFicha ? `<p><strong>Estado de la ficha:</strong> aprendices migrados: ${estado.estadoFicha.aprendices_migrados ? "sí" : "no"}</p>` : ""}
+    ${estado.errorEstado ? `<p class="error-texto">${escapeHtml(estado.errorEstado)}</p>` : ""}
   `;
   panelDetalle.hidden = false;
 }

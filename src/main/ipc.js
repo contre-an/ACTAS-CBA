@@ -75,8 +75,10 @@ ipcMain.handle("ficha:estado", (_e, carpeta) => {
     : [];
   resultado.actasSinPdf = resultado.actas.filter(f => /\.docx$/i.test(f) && !fs.existsSync(path.join(carpetaActas, f.replace(/\.docx$/i, ".pdf"))));
 
-  const estadoFicha = cargarEstado(carpeta);
-  if (estadoFicha) resultado.estadoFicha = estadoFicha;
+  try {
+    const estadoFicha = cargarEstado(carpeta);
+    if (estadoFicha) resultado.estadoFicha = estadoFicha;
+  } catch (e) { resultado.errorEstado = e.message; }
   return resultado;
 });
 

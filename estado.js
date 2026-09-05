@@ -11,10 +11,23 @@ function rutaEstado(carpetaFicha) {
 }
 
 function cargarEstado(carpetaFicha) {
+  const ruta = rutaEstado(carpetaFicha);
+  let contenido;
   try {
-    return JSON.parse(fs.readFileSync(rutaEstado(carpetaFicha), "utf8"));
-  } catch {
-    return null; // no existe → ficha sin inicializar
+    contenido = fs.readFileSync(ruta, "utf8");
+  } catch (e) {
+    if (e.code === "ENOENT") return null; // no existe → ficha sin inicializar
+    // Cualquier otro error de lectura (permisos, etc.) tampoco es "ficha
+    // nueva": es un problema real que hay que mostrarle al instructor.
+    throw new Error(`No se pudo leer el estado de la ficha "${carpetaFicha}" (${ruta}): ${e.message}`);
+  }
+  try {
+    return JSON.parse(contenido);
+  } catch (e) {
+    // El archivo SÍ existe pero está dañado: NUNCA tratarlo como ficha sin
+    // inicializar, o el instructor re-inicializaría encima y perdería el
+    // historial de llamados ya hecho.
+    throw new Error(`El estado de la ficha "${carpetaFicha}" (${ruta}) existe pero está dañado o mal formado: ${e.message}. No se trata como ficha nueva para no perder el historial: hay que revisar o restaurar ese archivo a mano.`);
   }
 }
 
