@@ -171,10 +171,25 @@ el("btn-generar-actas").addEventListener("click", () => ejecutarConVistaPrevia({
   renderizar: lista => renderizarPorFicha(lista, item => renderizarResumenActas(item.resumen)),
 }));
 
+function renderizarResumenEntrega(resumen) {
+  if (resumen.omitida) return `<p>${escapeHtml(resumen.mensaje)}</p>`;
+  const c = resumen.casos?.[0];
+  if (!c) return "<p><em>Sin datos.</em></p>";
+  const partes = [`<p><span class="caso-medida">${escapeHtml(etiquetaMedida(c.medida))}</span></p>`];
+  if (c.avisos?.length) partes.push(c.avisos.map(a => `<p class="aviso">${escapeHtml(a)}</p>`).join(""));
+  partes.push(`<p><strong>${c.evaluados}</strong> aprendiz(ces) evaluado(s) en SOFIA, <strong>${c.no_evaluados}</strong> sin evaluar.</p>`);
+  if (c.panorama) partes.push("<table><thead><tr><th>Estado</th><th>Cantidad</th></tr></thead><tbody>" +
+    c.panorama.map(p => `<tr><td>${escapeHtml(p.estado)}</td><td>${escapeHtml(p.cantidad)}</td></tr>`).join("") + "</tbody></table>");
+  if (c.medidas_texto) partes.push(`<p>${escapeHtml(c.medidas_texto)}</p>`);
+  if (c.inasistencias_texto) partes.push(`<p>${escapeHtml(c.inasistencias_texto)}</p>`);
+  if (c.archivo) partes.push(`<p class="exito-texto">Generada: ${escapeHtml(c.archivo)} (acta ${escapeHtml(c.acta)})</p>`);
+  return partes.join("");
+}
+
 el("btn-generar-entrega").addEventListener("click", () => ejecutarConVistaPrevia({
   titulo: "Acta de entrega de ficha",
   obtenerResultado: simular => window.actas.generarEntrega([...seleccionadas], { simular }),
-  renderizar: lista => renderizarPorFicha(lista, item => renderizarResumenActas(item.resumen)),
+  renderizar: lista => renderizarPorFicha(lista, item => renderizarResumenEntrega(item.resumen)),
 }));
 
 el("btn-convertir-pdf").addEventListener("click", () => ejecutarConVistaPrevia({
@@ -239,7 +254,8 @@ el("btn-revertir").addEventListener("click", () => {
       if (resultado.mensaje) return `<p><em>${escapeHtml(resultado.mensaje)}</em></p>`;
       const partes = [`<p>${resultado.actasRevertidas.length} acta(s) a revertir` + (resultado.entregaRevertida ? " + acta de entrega" : "") + ".</p>"];
       partes.push("<ul>" + resultado.actasRevertidas.map(a => `<li>${escapeHtml(a.aprendiz)} — ${escapeHtml(etiquetaMedida(a.tipo))} (acta ${escapeHtml(a.numero)})</li>`).join("") + "</ul>");
-      if (resultado.archivosBorrados) partes.push(`<p class="exito-texto">${resultado.archivosBorrados.length} archivo(s) borrado(s). Consecutivo: ${resultado.consecutivoAntes} → ${resultado.consecutivoDespues}.</p>`);
+      partes.push(`<p>Consecutivo: ${resultado.consecutivoAntes} → ${resultado.consecutivoDespues}${resultado.simulado ? " (si apruebas)" : ""}.</p>`);
+      if (!resultado.simulado) partes.push(`<p class="exito-texto">${resultado.archivosBorrados.length} archivo(s) borrado(s) de verdad. Respaldos: ${resultado.respaldos.map(escapeHtml).join(", ")}</p>`);
       return partes.join("");
     },
   });

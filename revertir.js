@@ -170,10 +170,33 @@ function revertirFecha(carpetaFicha, fecha, { simular = true } = {}) {
   if (simular) return reporte;
 
   // ---- a partir de aquí sí se ejecuta y se cambian archivos reales ----
-  const carpetaActas = path.join(carpetaFicha, "LLAMADOS DE ATENCION");
+  // Orden a propósito: TODO lo que se va a tocar se respalda ANTES de tocar
+  // nada (ni un archivo borrado, ni una fila de HISTORICO editada, ni el
+  // registro sobrescrito) — no solo justo antes de escribir cada uno.
+  const REGISTRO = process.env.ACTAS_REGISTRO_RUTA
+    ? path.resolve(process.env.ACTAS_REGISTRO_RUTA)
+    : path.join(__dirname, "registro.json");
+  if (fs.existsSync(REGISTRO)) {
+    const respaldoRegistro = `${REGISTRO}.respaldo_${timestamp()}`;
+    fs.copyFileSync(REGISTRO, respaldoRegistro);
+    reporte.respaldos.push(respaldoRegistro);
+  }
+  const respaldoControl = `${rutaControl}.respaldo_${timestamp()}`;
+  fs.copyFileSync(rutaControl, respaldoControl);
+  reporte.respaldos.push(respaldoControl);
 
+  const carpetaActas = path.join(carpetaFicha, "LLAMADOS DE ATENCION");
+  reporte.archivosNoBorrados = [];
+
+  // Borra y COMPRUEBA que de verdad quedó borrado: en el sistema anterior el
+  // script daba por borrado un archivo que seguía ahí (por ejemplo, abierto
+  // en Word/Excel y bloqueado por el sistema operativo). No basta con que
+  // unlinkSync no haya lanzado error.
   const borrarSiExiste = ruta => {
-    if (fs.existsSync(ruta)) { fs.unlinkSync(ruta); reporte.archivosBorrados.push(ruta); }
+    if (!fs.existsSync(ruta)) return;
+    try { fs.unlinkSync(ruta); } catch (e) { reporte.archivosNoBorrados.push(`${ruta} (${e.message})`); return; }
+    if (fs.existsSync(ruta)) reporte.archivosNoBorrados.push(`${ruta} (el sistema no reportó error, pero el archivo sigue ahí)`);
+    else reporte.archivosBorrados.push(ruta);
   };
   for (const a of actasRevertidas) {
     if (a.archivo) borrarSiExiste(path.join(carpetaActas, a.archivo));
@@ -186,24 +209,16 @@ function revertirFecha(carpetaFicha, fecha, { simular = true } = {}) {
   }
   if (entregaRevertida) borrarSiExiste(path.join(carpetaFicha, entregaRevertida.archivo));
 
-  // Respaldo del control ANTES de tocar el HISTORICO
-  const respaldoControl = `${rutaControl}.respaldo_${timestamp()}`;
-  fs.copyFileSync(rutaControl, respaldoControl);
-  reporte.respaldos.push(respaldoControl);
-
   const numerosARevertir = [...actasRevertidas.map(a => a.numero), ...(entregaRevertida ? [entregaRevertida.numero] : [])];
   reporte.historicoFilasEliminadas = quitarFilasHistorico(rutaControl, numerosARevertir);
 
-  // Respaldo del registro ANTES de sobrescribirlo. Misma ruta que usa
-  // generar.js (respeta ACTAS_REGISTRO_RUTA si una prueba automatizada la fijó).
-  const REGISTRO = process.env.ACTAS_REGISTRO_RUTA
-    ? path.resolve(process.env.ACTAS_REGISTRO_RUTA)
-    : path.join(__dirname, "registro.json");
-  if (fs.existsSync(REGISTRO)) {
-    const respaldoRegistro = `${REGISTRO}.respaldo_${timestamp()}`;
-    fs.copyFileSync(REGISTRO, respaldoRegistro);
-    reporte.respaldos.push(respaldoRegistro);
-  }
+  // Si algún archivo no se pudo borrar de verdad, no se sobrescribe el
+  // registro como si la reversión hubiera quedado completa: mejor un error
+  // explícito (con los respaldos ya hechos y a salvo) que un registro que
+  // dice "revertido" mientras el archivo real sigue en la carpeta.
+  if (reporte.archivosNoBorrados.length)
+    throw new Error(`No se pudo confirmar el borrado de: ${reporte.archivosNoBorrados.join("; ")}. ¿Alguno está abierto en Word/Excel? El registro NO se modificó; los respaldos ya están hechos: ${reporte.respaldos.join(", ")}`);
+
   guardarRegistro(reg);
 
   return reporte;

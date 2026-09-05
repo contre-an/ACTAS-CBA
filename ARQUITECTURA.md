@@ -4,6 +4,26 @@ Este documento no es código: es el mapa de cómo encajan los módulos que ya
 existen, para cuando se construya la interfaz Electron. Se actualiza cada vez
 que cambie una pieza o se resuelva uno de los pendientes de abajo.
 
+## Regla del proyecto: fechas siempre en día LOCAL, nunca UTC
+
+Nunca `.toISOString()`, nunca `Date.UTC`, ni en código de producción ni en
+pruebas, para nada que represente "qué día es esto". Siempre construir/leer
+el día con los getters locales (`getFullYear()`, `getMonth()`, `getDate()`),
+como ya hacen `iso()`/`fmt()` en `procesar.js` y `fechaCorta()` en
+`generar.js`.
+
+Por qué importa tanto: fue la causa de un fallo grave en el sistema
+anterior (el corte de fecha comparaba por marca de tiempo completa en vez de
+por día, y un aprendiz volvía a salir reportado en la siguiente corrida —
+ver el comentario en `procesar.js` junto a `iso()`). Y volvió a aparecer,
+esta vez en la propia prueba automatizada: `recorrido_completo.test.js`
+calculaba "hoy" con `.toISOString()` para pasárselo a `revertirFecha`, y
+pasadas las 19:00 hora de Colombia (UTC-5) UTC ya está en el día siguiente,
+así que no encontraba nada que revertir. Se reprodujo de verdad corriendo la
+suite a las 10pm y se corrigió con `hoyISOLocal()` (ver ese archivo). Dos
+apariciones del mismo error en el mismo proyecto — de ahí que quede como
+regla explícita aquí, no solo como corrección puntual.
+
 ## Prueba de recorrido completo
 
 `pruebas/recorrido_completo.test.js` (`npm test`) encadena, contra una ficha
@@ -73,24 +93,62 @@ ese sentido).
 
 ### Verificación (no solo "abre la ventana")
 
-Probado con Playwright (`_electron`), no solo "debería abrir": lanzar la
-app, apuntar la carpeta del trimestre a la ficha ficticia de
-`pruebas/recorrido_completo.test.js`, marcar la fila, generar actas con un
-incidente real, leer el texto exacto del modal, aprobar, y confirmar el
-`.docx` en disco. Dos bugs reales aparecieron y se corrigieron en el
-proceso, ninguno hipotético:
+Los 6 paneles probados con Playwright (`_electron`) contra datos reales o
+fieles a lo real, botón por botón: lanzar la app, marcar fichas, leer el
+texto exacto de cada modal de vista previa, aprobar, y confirmar en disco
+(y por checksum, cuando aplica) que pasó lo que la vista previa dijo que
+iba a pasar. No "debería funcionar": se leyó la salida real cada vez.
+
+- **Generar actas**: vista previa con la medida por aprendiz
+  ("PEREZ GOMEZ JUAN CARLOS → primer llamado de atención"), `.docx`
+  confirmado en disco tras aprobar.
+- **Acta de entrega**: la vista previa mostraba solo la medida, sin
+  evaluados/no evaluados/panorama que sí trae el resumen real — corregido
+  con un renderizador propio (`renderizarResumenEntrega` en `app.js`).
+- **Acta de equipo ejecutor**: confirmado con el horario real de la ficha
+  3479381 — la fila del instructor que genera trae sus propias novedades
+  ("MERCADO PATIÑO RONY EDUARDO: no asistió el 04/08/2026."), las demás
+  filas quedan vacías ("para diligenciar en la reunión").
+- **Convertir a PDF**: los `.docx` quedaron byte a byte idénticos por
+  checksum antes/después de convertir; sin errores de consola del
+  renderer (la ausencia de ventana de `cmd`/PowerShell ya la garantiza
+  `windowsHide: true` en `convertir_pdf.js`, verificado ahí en su momento).
+- **Revertir** (la acción destructiva, con más rigor a propósito):
+  - La vista previa lista EXACTAMENTE lo que se va a borrar (aprendiz +
+    medida + número de acta, más si hay entrega) antes de tocar nada; se
+    confirmó que NO existe ningún respaldo de `registro.json` mientras el
+    modal de vista previa está abierto — el respaldo solo aparece después
+    de aprobar.
+  - `revertirFecha` ahora respalda `registro.json` y el control ANTES de
+    borrar el primer archivo (antes se respaldaba justo antes de
+    sobrescribir el registro, es decir, después de haber borrado ya los
+    `.docx` — reordenado).
+  - Cada borrado se COMPRUEBA después de intentarlo (`fs.existsSync` tras
+    `unlinkSync`), no se da por hecho porque `unlinkSync` no haya lanzado
+    error. Si algún archivo no queda realmente borrado, `revertirFecha`
+    lanza un error explícito y **no** sobrescribe el registro — así nunca
+    queda un registro que dice "revertido" mientras el archivo real sigue
+    en la carpeta (el fallo exacto que describía el encargo del sistema
+    anterior). Probado con un bloqueo real: se generó un acta, se abrió su
+    `.docx` en una instancia real de Word (sin cerrarla, para que el
+    archivo quedara con un bloqueo real de escritura), y se intentó
+    revertir — tanto desde Node directo como desde la interfaz: el error
+    salió claro en el panel de resultados de la app (no en una consola,
+    no una ventana nativa), el archivo siguió existiendo, y el registro
+    no se tocó. Ver captura de la verificación.
+- **Inicializar trimestre**: probados los 2 pasos por separado — crear el
+  control desde la plantilla (y abrirlo en Excel), y migrar aprendices
+  desde un reporte de SOFIA ficticio (con un caso EN INDUCCIÓN, para
+  confirmar la corrección) sobre la ficha recién creada.
+
+Dos bugs reales aparecieron en el proceso y se corrigieron, ninguno
+hipotético:
 - **CSS**: `.modal-overlay { display: flex }` (una clase) le ganaba en
   especificidad al `[hidden] { display: none }` del navegador (un
   atributo), así que el modal de vista previa se veía SIEMPRE, vacío, desde
-  el primer instante. Se ve en la primera captura de la verificación.
-  Arreglado con `.modal-overlay[hidden] { display: none }`.
-- **Día UTC vs. local, en la propia prueba automatizada** (no en código de
-  producción): el paso 8 de `recorrido_completo.test.js` calculaba "hoy"
-  con `.toISOString()` (día en UTC) en vez de día local. Pasadas las 19:00
-  hora de Colombia, UTC ya está en el día siguiente y `revertirFecha` no
-  encontraba nada que revertir — la misma familia de bug que todo este
-  proyecto existe para evitar, colada en la prueba. Reproducido de verdad
-  corriendo la suite a las 10pm, corregido con `hoyISOLocal()`.
+  el primer instante. Arreglado con `.modal-overlay[hidden] { display: none }`.
+- **Día UTC vs. local, en la propia prueba automatizada** — ver la regla
+  del proyecto al inicio de este documento.
 
 ## Módulos y su responsabilidad
 
