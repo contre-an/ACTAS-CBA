@@ -15,6 +15,83 @@ convertir a PDF. Corre aislada del `registro.json` real del proyecto
 `revertir.js`, `sofia.js` o `equipo_ejecutor.js` debería correrla antes de
 darse por bueno.**
 
+## Interfaz (Electron)
+
+`src/main/` (proceso principal, con Node/fs) y `src/renderer/` (HTML/CSS/JS
+plano, sin framework, sin paso de build — decisión del instructor: menos
+piezas para algo que van a instalar instructores, no desarrolladores). Los
+módulos de lógica de la tabla de abajo no se tocan ni se mueven: `src/main/ipc.js`
+los requiere tal cual desde la raíz del proyecto.
+
+Seguridad: `contextIsolation: true`, `nodeIntegration: false`, `sandbox: true`.
+El renderer nunca toca `fs` ni `child_process`: todo pasa por
+`src/main/preload.js` (`contextBridge`, API angosta `window.actas.*`) hacia
+`ipcMain.handle()` en `src/main/ipc.js` — el ÚNICO lugar donde la interfaz
+llama a los módulos de lógica.
+
+Los 4 principios no negociables del encargo:
+- **Casillas**: ninguna acción opera sobre "todas", siempre sobre el arreglo
+  de carpetas marcadas (`seleccionadas`, un `Set`, en `app.js`).
+- **Vista previa obligatoria**: cada botón llama primero con `simular:true`
+  y muestra el resultado en un modal; solo "Aprobar y ejecutar" repite la
+  llamada con `simular:false`. Es la MISMA función en los dos casos — no un
+  formato de vista previa inventado aparte, así la vista previa nunca puede
+  mentir sobre lo que va a pasar.
+- **Un solo botón "Generar actas"** (confirmado con el instructor:
+  `procesarControl` ya escala sola la medida mirando el historial; cuatro
+  botones que llamaran a la misma función sugerirían una decisión que no
+  existe, y romperían el debido proceso si alguien creyera que puede "pedir"
+  un plan de mejoramiento saltándose los llamados previos). La vista previa
+  muestra la medida por aprendiz ("PEREZ GOMEZ JUAN CARLOS → primer llamado
+  de atención"), nunca un conteo.
+- **Sin ventanas de consola**: panel de resultados dentro de la ventana.
+  `convertir_pdf.js` pasa `windowsHide: true` a sus subprocesos por esto
+  mismo.
+
+Agregado por el instructor, ya construido: botón "Abrir carpeta" por fila, y
+la carpeta del trimestre se recuerda entre sesiones
+(`userData/configuracion.json`, ver `src/main/configuracion.js`).
+
+### Canales IPC → función real
+
+| Canal | Función que llama |
+|---|---|
+| `fichas:listar` | `leerControl` por cada subcarpeta (vía `buscarControlEnCarpeta`) |
+| `actas:generar` | `procesarControl(ruta, false, simular)` |
+| `entrega:generar` | `generarEntregaControl(ruta, simular)` |
+| `equipoEjecutor:generar` | `prepararActaEquipoEjecutor(opciones, {simular})` |
+| `pdf:convertir` | `convertirPdf(carpeta, {simular})` |
+| `revertir:ejecutar` | `revertirFecha(carpeta, fecha, {simular})` |
+| `inicializar:crearControl` | copia la plantilla maestra, abre el `.xlsx` en Excel |
+| `inicializar:migrarAprendices` | `leerReporteSofia` + `poblarAprendices` |
+
+"Inicializar trimestre" queda como asistente de 2 pasos explícitos (crear
+control → el instructor llena PARAMETROS a mano en Excel → migrar
+aprendices), no un formulario único: PARAMETROS lo sigue llenando el
+instructor a mano, la app no lo automatiza (ver pendiente 3, ya resuelto en
+ese sentido).
+
+### Verificación (no solo "abre la ventana")
+
+Probado con Playwright (`_electron`), no solo "debería abrir": lanzar la
+app, apuntar la carpeta del trimestre a la ficha ficticia de
+`pruebas/recorrido_completo.test.js`, marcar la fila, generar actas con un
+incidente real, leer el texto exacto del modal, aprobar, y confirmar el
+`.docx` en disco. Dos bugs reales aparecieron y se corrigieron en el
+proceso, ninguno hipotético:
+- **CSS**: `.modal-overlay { display: flex }` (una clase) le ganaba en
+  especificidad al `[hidden] { display: none }` del navegador (un
+  atributo), así que el modal de vista previa se veía SIEMPRE, vacío, desde
+  el primer instante. Se ve en la primera captura de la verificación.
+  Arreglado con `.modal-overlay[hidden] { display: none }`.
+- **Día UTC vs. local, en la propia prueba automatizada** (no en código de
+  producción): el paso 8 de `recorrido_completo.test.js` calculaba "hoy"
+  con `.toISOString()` (día en UTC) en vez de día local. Pasadas las 19:00
+  hora de Colombia, UTC ya está en el día siguiente y `revertirFecha` no
+  encontraba nada que revertir — la misma familia de bug que todo este
+  proyecto existe para evitar, colada en la prueba. Reproducido de verdad
+  corriendo la suite a las 10pm, corregido con `hoyISOLocal()`.
+
 ## Módulos y su responsabilidad
 
 | Módulo | Responsabilidad | Toca archivos |
@@ -53,10 +130,11 @@ pendiente 7).
   (`reg.entregas`). **No sabe nada de `reg.equipoEjecutor`** (estructura
   nueva de este commit) — ver pendiente 5.
 
-## Flujo nuevo: "Inicializar trimestre" (conecta horario.js + sofia.js)
+## Flujo "Inicializar trimestre" (conecta la plantilla maestra + sofia.js)
 
-Es el único botón del alcance v1.0 que todavía no tiene una función que lo
-implemente de punta a punta — hoy son piezas sueltas. Así se conectarían:
+Ya tiene interfaz (`inicializar:crearControl` / `inicializar:migrarAprendices`
+en `src/main/ipc.js`), como asistente de 2 pasos con una pausa manual en medio
+(el instructor llena PARAMETROS en Excel):
 
 1. El instructor elige la carpeta de la ficha (o la app la detecta con
    `estado.js → clasificarArchivos`).
