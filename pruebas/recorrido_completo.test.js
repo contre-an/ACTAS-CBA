@@ -275,6 +275,12 @@ test("recorrido completo, ficha ficticia 9000001", async t => {
     assert.ok(fs.existsSync(rutaActaEquipoEjecutor));
     const texto = textoDocx(rutaActaEquipoEjecutor);
     assert.doesNotMatch(texto, /\{[^}]+\}/, "no deben quedar marcadores sin reemplazar");
+
+    // Paso 2 del pendiente (ver ARQUITECTURA.md): la entrada nueva en
+    // reg.equipoEjecutor debe traer la ruta completa del .docx, para que
+    // revertirFecha (paso 3) pueda borrarlo sin adivinar dónde quedó.
+    const entrada = leerRegistro().equipoEjecutor[String(FICHA)].find(e => e.numero === real.numero);
+    assert.equal(entrada.ruta, rutaActaEquipoEjecutor);
   });
 
   await t.test("8. revertir todo lo de esa fecha: registro y consecutivo como antes", () => {

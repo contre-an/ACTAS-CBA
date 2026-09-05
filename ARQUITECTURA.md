@@ -371,10 +371,14 @@ aprobación. Estado actual por función:
      `reg.consecutivo` por debajo de un número de equipo ejecutor que
      seguía en uso, y la siguiente acta generada lo reutilizaría sobre un
      documento real distinto.
-   - **Paso 2 (pendiente)**: que `generarActaEquipoEjecutor` guarde la
-     ruta completa del `.docx` dentro de la entrada de
-     `reg.equipoEjecutor[ficha]`. Solo aplica a las actas nuevas; las
-     viejas quedan sin ruta.
+   - **Paso 2 (hecho)**: `prepararActaEquipoEjecutor` (`equipo_ejecutor.js`)
+     ahora completa la entrada de `reg.equipoEjecutor[ficha]` con la ruta
+     completa del `.docx` (campo `ruta`), justo después de escribirlo —
+     igual patrón que ya usa `procesar.js` tras `generarActa()` para
+     completar `archivo` en el historial del aprendiz. `generarActaEquipoEjecutor`
+     (en `generar.js`) no lo hace directamente porque no conoce la carpeta
+     de salida ni el nombre del archivo; eso lo decide quien la llama.
+     Solo aplica a las actas nuevas; las viejas quedan sin `ruta`.
    - **Paso 3 (pendiente)**: que `revertirFecha` detecte y borre entradas
      de `reg.equipoEjecutor[ficha]` con esa fecha. Si la entrada no tiene
      ruta guardada (actas de antes del paso 2), no debe fallar en

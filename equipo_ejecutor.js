@@ -11,7 +11,7 @@ const fs = require("fs");
 const path = require("path");
 const { leerHorario, resumenInstructores } = require("./horario");
 const { leerControl, norm, evaluarAprendiz, recibeLlamado, categoriaDe, CATEGORIAS } = require("./procesar");
-const { generarActaEquipoEjecutor } = require("./generar");
+const { generarActaEquipoEjecutor, cargarRegistro, guardarRegistro } = require("./generar");
 
 // El horario suele traer el nombre del instructor recortado ("CARLOS JOSE
 // GREGORIO" en vez de "CARLOS JOSÉ GREGORIO CONTRERAS VIVAS"). Se considera
@@ -123,7 +123,21 @@ async function prepararActaEquipoEjecutor(opciones, { simular = true } = {}) {
   const { buffer, numero } = generarActaEquipoEjecutor(datos);
   fs.mkdirSync(opciones.carpetaSalida, { recursive: true });
   const nombreArchivo = `ACTA_${numero}_EQUIPO_EJECUTOR_FICHA_${horario.ficha}.docx`;
-  fs.writeFileSync(path.join(opciones.carpetaSalida, nombreArchivo), buffer);
+  const rutaArchivo = path.join(opciones.carpetaSalida, nombreArchivo);
+  fs.writeFileSync(rutaArchivo, buffer);
+
+  // Igual que procesar.js tras generarActa(): generarActaEquipoEjecutor ya
+  // escribió la entrada en reg.equipoEjecutor[ficha], pero no conoce la
+  // carpeta de salida ni el nombre del archivo (los decide quien la llama).
+  // Se vuelve a abrir el registro para completar esa entrada con la ruta
+  // completa, que revertirFecha va a necesitar para borrar el archivo sin
+  // adivinar dónde quedó (paso 3, pendiente). Solo aplica a las actas
+  // nuevas: las que ya estaban en el registro se quedan sin este campo.
+  const reg = cargarRegistro();
+  const entrada = (reg.equipoEjecutor?.[String(horario.ficha)] || []).find(e => e.numero === numero);
+  if (entrada) entrada.ruta = rutaArchivo;
+  guardarRegistro(reg);
+
   return { simulado: false, ficha: horario.ficha, programa: horario.programa, numero, archivo: nombreArchivo, avisos };
 }
 
