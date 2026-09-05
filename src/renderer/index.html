@@ -10,6 +10,10 @@
 <header>
   <h1>Actas CBA</h1>
   <div class="carpeta-trimestre">
+    <label class="interruptor-modo-prueba">
+      <input type="checkbox" id="chk-modo-prueba">
+      Modo prueba
+    </label>
     <label class="codigo-instructor">Código instructor
       <input id="input-codigo-instructor" type="text" inputmode="numeric" maxlength="2" placeholder="00">
     </label>
@@ -17,6 +21,11 @@
     <button id="btn-cambiar-carpeta">Elegir carpeta del trimestre…</button>
   </div>
 </header>
+
+<div id="banner-modo-prueba" class="banner-modo-prueba" hidden>
+  <span>⚠ MODO PRUEBA — nada de esto es real. Los datos, la carpeta y las actas que ves aquí son de demostración; no tocan tu registro ni tus fichas reales.</span>
+  <button id="btn-restablecer-prueba">Restablecer modo prueba</button>
+</div>
 
 <main>
 

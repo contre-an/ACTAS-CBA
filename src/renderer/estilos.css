@@ -36,6 +36,16 @@ header h1 { font-size: 18px; margin: 0; }
 .codigo-instructor { display: flex; align-items: center; gap: 6px; }
 .codigo-instructor input { width: 2.6em; text-align: center; padding: 5px; border-radius: 6px; border: 1px solid var(--borde); font: inherit; }
 
+.interruptor-modo-prueba { display: flex; align-items: center; gap: 6px; font-weight: 600; }
+.interruptor-modo-prueba input { width: 16px; height: 16px; }
+
+.banner-modo-prueba {
+  background: var(--peligro); color: #fff; padding: 10px 20px;
+  display: flex; align-items: center; justify-content: space-between; gap: 16px;
+  font-weight: 600; font-size: 13px;
+}
+.banner-modo-prueba button { background: #fff; color: var(--peligro); border: none; font-weight: 700; white-space: nowrap; }
+
 main { padding: 16px 20px 40px; display: flex; flex-direction: column; gap: 16px; max-width: 1200px; margin: 0 auto; }
 
 .panel { background: var(--panel); border: 1px solid var(--borde); border-radius: 8px; padding: 16px; }

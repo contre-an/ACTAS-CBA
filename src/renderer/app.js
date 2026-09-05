@@ -103,6 +103,39 @@ el("btn-cambiar-carpeta").addEventListener("click", async () => {
   if (nueva) { carpetaTrimestre = nueva; rutaTrimestreSpan.textContent = nueva; await cargarFichas(); }
 });
 
+// ===== Modo prueba =====
+// Con el modo prueba prendido: la carpeta del trimestre pasa a ser la ficha
+// de demostración (fichas:listar la recibe igual que cualquier otra, así
+// que TODAS las acciones —generar actas, entrega, equipo ejecutor,
+// revertir, convertir a PDF— quedan automáticamente dentro del sandbox, sin
+// tener que tocarlas una por una). "Inicializar trimestre" es la única
+// excepción: se deshabilita (ver bloquearSiModoPrueba en ipc.js) porque
+// implica elegir carpetas o archivos reales por diálogo nativo del sistema,
+// algo que el modo prueba no puede aislar.
+
+function aplicarEstadoModoPrueba(activo) {
+  el("banner-modo-prueba").hidden = !activo;
+  el("chk-modo-prueba").checked = activo;
+  el("btn-init-crear").disabled = activo;
+  el("btn-init-migrar").disabled = activo;
+}
+
+el("chk-modo-prueba").addEventListener("change", async e => {
+  const activo = await window.actas.alternarModoPrueba(e.target.checked);
+  aplicarEstadoModoPrueba(activo);
+  carpetaTrimestre = await window.actas.obtenerCarpetaTrimestre();
+  rutaTrimestreSpan.textContent = carpetaTrimestre || "Sin carpeta del trimestre seleccionada";
+  await cargarFichas();
+});
+
+el("btn-restablecer-prueba").addEventListener("click", async () => {
+  if (!confirm("¿Restablecer el modo prueba? Borra todo lo generado en la demostración y la arma de nuevo desde cero. Esto NUNCA toca datos reales."))
+    return;
+  await window.actas.restablecerModoPrueba();
+  await cargarFichas();
+  agregarResultado("Modo prueba", `<p class="exito-texto">Restablecido: la ficha de demostración vuelve a empezar de cero.</p>`);
+});
+
 // ===== Modal genérico de vista previa / aprobación =====
 
 const modalOverlay = el("modal-overlay");
@@ -310,6 +343,7 @@ inputCodigoInstructor.addEventListener("change", async () => {
 // ===== Arranque =====
 
 (async () => {
+  aplicarEstadoModoPrueba(await window.actas.obtenerModoPrueba());
   carpetaTrimestre = await window.actas.obtenerCarpetaTrimestre();
   if (carpetaTrimestre) { rutaTrimestreSpan.textContent = carpetaTrimestre; await cargarFichas(); }
   inputCodigoInstructor.value = await window.actas.obtenerCodigoInstructor();

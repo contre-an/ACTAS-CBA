@@ -23,23 +23,57 @@ const { revertirFecha, buscarControlEnCarpeta } = requerir("revertir");
 const { convertirPdf, wordInstalado } = requerir("convertir_pdf");
 const { estadoNuevo, guardarEstado, cargarEstado } = requerir("estado");
 const { cargarConfiguracion, guardarConfiguracion } = require("./configuracion");
+const modoPrueba = require("./modoPrueba");
 
 const RUTA_PLANTILLA_MAESTRA = path.join(RAIZ, "PLANTILLA_MAESTRA_CONTROL_ASISTENCIA V3.xlsx");
 
-// Fija, antes de cada acción que genera actas numeradas, las variables de
-// entorno que generar.js lee para armar el número compuesto (ver
-// numeroActa() ahí) y para aislar el registro. Se relee la configuración
-// cada vez (no solo al arrancar la app) porque el instructor puede cambiar
-// su código, o prender/apagar el modo prueba, sin reiniciar la ventana.
+// Fija, antes de CUALQUIER acción que toque el registro o genere actas
+// numeradas, las variables de entorno que generar.js/revertir.js leen:
+// - ACTAS_CODIGO_INSTRUCTOR para el número compuesto (numeroActa() en generar.js).
+// - ACTAS_REGISTRO_RUTA: con el modo prueba prendido, apunta a
+//   registro.pruebas.json (userData/modo_prueba/), NUNCA al registro.json
+//   real — es lo único que de verdad separa las dos cosas. Con el modo
+//   prueba apagado, se borra la variable y todo vuelve al registro.json de
+//   siempre.
+// Se relee la configuración en cada llamado, no solo al arrancar la app,
+// porque el instructor puede cambiar su código o el modo prueba sin
+// reiniciar la ventana.
 function aplicarVariablesDeEntorno() {
   const config = cargarConfiguracion();
   if (config.codigoInstructor) process.env.ACTAS_CODIGO_INSTRUCTOR = config.codigoInstructor;
   else delete process.env.ACTAS_CODIGO_INSTRUCTOR;
+
+  if (config.modoPrueba) process.env.ACTAS_REGISTRO_RUTA = modoPrueba.rutaRegistroPruebas();
+  else delete process.env.ACTAS_REGISTRO_RUTA;
 }
+
+// La carpeta del trimestre "de verdad" según el modo actual: la ficticia de
+// demostración con el modo prueba prendido (se crea sola la primera vez),
+// la real configurada por el instructor si no.
+function carpetaTrimestreEfectiva() {
+  const config = cargarConfiguracion();
+  if (config.modoPrueba) { modoPrueba.asegurarFichaDemo(); return modoPrueba.rutaTrimestreDemo(); }
+  return config.carpetaTrimestre || null;
+}
+
+// ===== Modo prueba =====
+
+ipcMain.handle("modoPrueba:obtener", () => !!cargarConfiguracion().modoPrueba);
+
+ipcMain.handle("modoPrueba:alternar", (_e, activo) => {
+  guardarConfiguracion({ ...cargarConfiguracion(), modoPrueba: !!activo });
+  if (activo) modoPrueba.asegurarFichaDemo();
+  return !!activo;
+});
+
+ipcMain.handle("modoPrueba:restablecer", () => {
+  modoPrueba.restablecer();
+  return true;
+});
 
 // ===== Config: carpeta del trimestre y código de instructor, recordados entre sesiones =====
 
-ipcMain.handle("config:obtener-carpeta-trimestre", () => cargarConfiguracion().carpetaTrimestre || null);
+ipcMain.handle("config:obtener-carpeta-trimestre", () => carpetaTrimestreEfectiva());
 
 ipcMain.handle("config:elegir-carpeta-trimestre", async () => {
   const r = await dialog.showOpenDialog({ properties: ["openDirectory"], title: "Carpeta del trimestre" });
@@ -163,6 +197,7 @@ ipcMain.handle("pdf:convertir", (_e, carpetas, opciones) => {
 // ===== Revertir =====
 
 ipcMain.handle("revertir:ejecutar", (_e, carpeta, fecha, opciones) => {
+  aplicarVariablesDeEntorno();
   const { simular } = opciones;
   try { return { carpeta, resultado: revertirFecha(carpeta, fecha, { simular }) }; }
   catch (e) { return { carpeta, error: e.message }; }
@@ -172,6 +207,18 @@ ipcMain.handle("revertir:ejecutar", (_e, carpeta, fecha, opciones) => {
 // Paso A: crear la carpeta de la ficha y copiar la plantilla en blanco.
 // El instructor la abre y llena PARAMETROS a mano (ficha, competencia,
 // instructor: un control es de un solo instructor y una sola competencia).
+//
+// Deshabilitado con el modo prueba prendido: a diferencia de las demás
+// acciones (que operan sobre la carpeta que ya devolvió fichas:listar, y
+// esa carpeta es la de demostración cuando el modo prueba está prendido),
+// "inicializar trimestre" deja que el instructor elija CUALQUIER carpeta
+// real por un diálogo nativo del sistema operativo — es el único punto
+// donde el modo prueba no puede garantizar que nada real se toque, así que
+// se bloquea en vez de arriesgarse.
+function bloquearSiModoPrueba() {
+  if (cargarConfiguracion().modoPrueba)
+    throw new Error("Inicializar trimestre está deshabilitado en modo prueba: implica elegir carpetas reales del computador. Apaga el modo prueba para usarlo.");
+}
 
 ipcMain.handle("inicializar:elegirCarpetaDestino", async () => {
   const r = await dialog.showOpenDialog({ properties: ["openDirectory"], title: "Carpeta donde crear la ficha" });
@@ -179,13 +226,16 @@ ipcMain.handle("inicializar:elegirCarpetaDestino", async () => {
 });
 
 ipcMain.handle("inicializar:crearControl", (_e, { carpetaDestino, nombreCarpeta }) => {
-  const carpetaFicha = path.join(carpetaDestino, nombreCarpeta);
-  fs.mkdirSync(carpetaFicha, { recursive: true });
-  const rutaControl = path.join(carpetaFicha, `CONTROL_ASISTENCIA_${nombreCarpeta}.xlsx`);
-  if (fs.existsSync(rutaControl)) return { error: `Ya existe ${path.basename(rutaControl)} en esa carpeta.` };
-  fs.copyFileSync(RUTA_PLANTILLA_MAESTRA, rutaControl);
-  shell.openPath(rutaControl); // el instructor llena PARAMETROS a mano, en Excel
-  return { carpetaFicha, rutaControl };
+  try {
+    bloquearSiModoPrueba();
+    const carpetaFicha = path.join(carpetaDestino, nombreCarpeta);
+    fs.mkdirSync(carpetaFicha, { recursive: true });
+    const rutaControl = path.join(carpetaFicha, `CONTROL_ASISTENCIA_${nombreCarpeta}.xlsx`);
+    if (fs.existsSync(rutaControl)) return { error: `Ya existe ${path.basename(rutaControl)} en esa carpeta.` };
+    fs.copyFileSync(RUTA_PLANTILLA_MAESTRA, rutaControl);
+    shell.openPath(rutaControl); // el instructor llena PARAMETROS a mano, en Excel
+    return { carpetaFicha, rutaControl };
+  } catch (e) { return { error: e.message }; }
 });
 
 // Paso B: una vez PARAMETROS está lleno, migrar los aprendices desde SOFIA.
@@ -197,6 +247,11 @@ ipcMain.handle("inicializar:elegirReporteSofia", async () => {
 
 ipcMain.handle("inicializar:migrarAprendices", (_e, { carpeta, rutaReporteSofia, simular }) => {
   try {
+    // Se bloquea también en vista previa: aunque el destino sea la ficha de
+    // demostración (segura), el reporte de SOFIA se elige con un diálogo de
+    // archivo sin restricciones — podría ser un reporte real, con nombres
+    // reales, y terminaría metido en una demostración.
+    bloquearSiModoPrueba();
     const rutaControl = buscarControlEnCarpeta(carpeta);
     const { ficha, aprendices, advertencias } = leerReporteSofia(rutaReporteSofia);
     const resultado = poblarAprendices(rutaControl, aprendices, { simular });

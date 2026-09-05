@@ -12,6 +12,10 @@ contextBridge.exposeInMainWorld("actas", {
   obtenerCodigoInstructor: invocar("config:obtener-codigo-instructor"),
   guardarCodigoInstructor: invocar("config:guardar-codigo-instructor"),
 
+  obtenerModoPrueba: invocar("modoPrueba:obtener"),
+  alternarModoPrueba: invocar("modoPrueba:alternar"),
+  restablecerModoPrueba: invocar("modoPrueba:restablecer"),
+
   listarFichas: invocar("fichas:listar"),
   abrirCarpetaFicha: invocar("ficha:abrir-carpeta"),
   estadoFicha: invocar("ficha:estado"),
