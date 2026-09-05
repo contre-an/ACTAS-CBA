@@ -300,9 +300,17 @@ el("btn-init-migrar").addEventListener("click", () => {
   });
 });
 
+// ===== Código de instructor (numeración compuesta de actas: 951210-XX-NNN) =====
+
+const inputCodigoInstructor = el("input-codigo-instructor");
+inputCodigoInstructor.addEventListener("change", async () => {
+  inputCodigoInstructor.value = await window.actas.guardarCodigoInstructor(inputCodigoInstructor.value);
+});
+
 // ===== Arranque =====
 
 (async () => {
   carpetaTrimestre = await window.actas.obtenerCarpetaTrimestre();
   if (carpetaTrimestre) { rutaTrimestreSpan.textContent = carpetaTrimestre; await cargarFichas(); }
+  inputCodigoInstructor.value = await window.actas.obtenerCodigoInstructor();
 })();

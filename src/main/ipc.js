@@ -26,7 +26,18 @@ const { cargarConfiguracion, guardarConfiguracion } = require("./configuracion")
 
 const RUTA_PLANTILLA_MAESTRA = path.join(RAIZ, "PLANTILLA_MAESTRA_CONTROL_ASISTENCIA V3.xlsx");
 
-// ===== Config: carpeta del trimestre, recordada entre sesiones =====
+// Fija, antes de cada acción que genera actas numeradas, las variables de
+// entorno que generar.js lee para armar el número compuesto (ver
+// numeroActa() ahí) y para aislar el registro. Se relee la configuración
+// cada vez (no solo al arrancar la app) porque el instructor puede cambiar
+// su código, o prender/apagar el modo prueba, sin reiniciar la ventana.
+function aplicarVariablesDeEntorno() {
+  const config = cargarConfiguracion();
+  if (config.codigoInstructor) process.env.ACTAS_CODIGO_INSTRUCTOR = config.codigoInstructor;
+  else delete process.env.ACTAS_CODIGO_INSTRUCTOR;
+}
+
+// ===== Config: carpeta del trimestre y código de instructor, recordados entre sesiones =====
 
 ipcMain.handle("config:obtener-carpeta-trimestre", () => cargarConfiguracion().carpetaTrimestre || null);
 
@@ -36,6 +47,14 @@ ipcMain.handle("config:elegir-carpeta-trimestre", async () => {
   const carpeta = r.filePaths[0];
   guardarConfiguracion({ ...cargarConfiguracion(), carpetaTrimestre: carpeta });
   return carpeta;
+});
+
+ipcMain.handle("config:obtener-codigo-instructor", () => cargarConfiguracion().codigoInstructor || "");
+
+ipcMain.handle("config:guardar-codigo-instructor", (_e, codigo) => {
+  const limpio = String(codigo ?? "").replace(/\D/g, "").slice(0, 2).padStart(2, "0");
+  guardarConfiguracion({ ...cargarConfiguracion(), codigoInstructor: limpio });
+  return limpio;
 });
 
 // ===== Fichas: listar subcarpetas del trimestre, leer su estado básico =====
@@ -86,6 +105,7 @@ ipcMain.handle("ficha:estado", (_e, carpeta) => {
 // sistema mirando el historial, no la elige quien aprieta el botón) =====
 
 ipcMain.handle("actas:generar", (_e, carpetas, opciones) => {
+  aplicarVariablesDeEntorno();
   const { simular } = opciones;
   return carpetas.map(carpeta => {
     try {
@@ -98,6 +118,7 @@ ipcMain.handle("actas:generar", (_e, carpetas, opciones) => {
 // ===== Acta de entrega de ficha =====
 
 ipcMain.handle("entrega:generar", (_e, carpetas, opciones) => {
+  aplicarVariablesDeEntorno();
   const { simular } = opciones;
   return carpetas.map(carpeta => {
     try {
@@ -115,6 +136,7 @@ ipcMain.handle("equipoEjecutor:elegirHorario", async () => {
 });
 
 ipcMain.handle("equipoEjecutor:generar", async (_e, opciones) => {
+  aplicarVariablesDeEntorno();
   const { carpeta, rutaHorarioPdf, horaInicio, horaFin, fecha, lugar, sintesis, simular } = opciones;
   try {
     const rutaControl = buscarControlEnCarpeta(carpeta);
