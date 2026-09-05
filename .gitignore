@@ -31,3 +31,6 @@ INFORME_COMITE_*.docx
 
 # Carpeta de trabajo de las pruebas automatizadas (se recrea en cada corrida).
 pruebas/tmp/
+
+# Salida de electron-builder (npm run dist), se regenera.
+/dist/
