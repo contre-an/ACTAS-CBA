@@ -40,6 +40,17 @@ const FICHA = 9000001;
 
 // ===== Helpers de armado del control de prueba =====
 
+// Día calendario LOCAL, no UTC (igual que iso()/fechaCorta() en el resto del
+// proyecto). new Date().toISOString() da el día en UTC: pasadas las 19:00
+// hora de Colombia (UTC-5), UTC ya está en el día siguiente, y revertirFecha
+// -que sí compara por día local- no encontraría nada que revertir. Es la
+// misma familia de bug que este proyecto entero se cuida de no reintroducir,
+// esta vez en la prueba misma.
+function hoyISOLocal() {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+}
+
 function leerRegistro() {
   try { return JSON.parse(fs.readFileSync(process.env.ACTAS_REGISTRO_RUTA, "utf8")); }
   catch { return { consecutivo: 0, aprendices: {} }; }
@@ -267,7 +278,7 @@ test("recorrido completo, ficha ficticia 9000001", async t => {
   });
 
   await t.test("8. revertir todo lo de esa fecha: registro y consecutivo como antes", () => {
-    const hoyISO = new Date().toISOString().slice(0, 10);
+    const hoyISO = hoyISOLocal();
     const antes = leerRegistro();
 
     const previa = revertirFecha(CARPETA, hoyISO); // simular=true por defecto
