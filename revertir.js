@@ -113,6 +113,14 @@ function recalcularConsecutivo(reg) {
       max = Math.max(max, consecutivoPropio(h.numero));
   for (const ficha of Object.keys(reg.entregas || {}))
     max = Math.max(max, consecutivoPropio(reg.entregas[ficha].numero));
+  // Sin esto, un acta de equipo ejecutor con el numero mas alto emitido
+  // para una ficha quedaria fuera del calculo: al revertir cualquier otra
+  // cosa, reg.consecutivo bajaria por debajo de un numero que sigue en
+  // uso, y la siguiente acta generada lo reutilizaria sobre un documento
+  // real distinto.
+  for (const ficha of Object.keys(reg.equipoEjecutor || {}))
+    for (const e of reg.equipoEjecutor[ficha] || [])
+      max = Math.max(max, consecutivoPropio(e.numero));
   reg.consecutivo = max;
 }
 

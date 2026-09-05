@@ -289,18 +289,25 @@ test("recorrido completo, ficha ficticia 9000001", async t => {
 
     const regDespues = leerRegistro();
     assert.equal(regDespues.aprendices[`${FICHA}-100000001`], undefined, "el aprendiz vuelve a quedar limpio");
-    assert.equal(regDespues.consecutivo, 0, "solo quedaban las 4 actas de Juan Carlos (mas el equipo ejecutor, ver nota)");
+    // El acta de equipo ejecutor del paso 7 usó el numero 5 y sigue
+    // "viva" (revertirFecha todavía no la conoce, ver nota abajo), así que
+    // el consecutivo correcto tras revertir las 4 de Juan Carlos es 5, no 0
+    // (paso 1 de 3 del pendiente ya resuelto: recalcularConsecutivo ahora
+    // SÍ cuenta reg.equipoEjecutor).
+    assert.equal(regDespues.consecutivo, 5, "el numero del equipo ejecutor sigue en uso y no debe reutilizarse");
 
     for (const h of antes.aprendices[`${FICHA}-100000001`].historial)
       assert.ok(!fs.existsSync(path.join(CARPETA_ACTAS, h.archivo)), `${h.archivo} debió borrarse`);
 
-    // CONOCIDO (ver ARQUITECTURA.md, pendiente 5): revertirFecha no conoce
-    // reg.equipoEjecutor. El acta de equipo ejecutor del paso 7 SOBREVIVE a
-    // "revertir todo lo de esa fecha": el archivo sigue en disco y su número
-    // no se cuenta al recalcular el consecutivo. Esta prueba deja eso
-    // visible a propósito, en vez de esconderlo: el día que se resuelva,
-    // esta aserción va a fallar y va a recordar actualizarla.
-    assert.ok(fs.existsSync(rutaActaEquipoEjecutor), "gap conocido: el acta de equipo ejecutor no se revierte (todavía)");
+    // CONOCIDO (ver ARQUITECTURA.md, pendiente 5, pasos 2 y 3): revertirFecha
+    // todavía no detecta ni borra entradas de reg.equipoEjecutor. El acta de
+    // equipo ejecutor del paso 7 SOBREVIVE a "revertir todo lo de esa
+    // fecha": el archivo sigue en disco y la entrada sigue en el registro
+    // (su número sí se cuenta ahora para el consecutivo — eso ya se
+    // resolvió arriba). Esta prueba deja eso visible a propósito, en vez de
+    // esconderlo: el día que se resuelva (pasos 2/3), esta aserción va a
+    // fallar y va a recordar actualizarla.
+    assert.ok(fs.existsSync(rutaActaEquipoEjecutor), "gap conocido: el .docx de equipo ejecutor no se borra (todavía)");
 
     // Se corrige a mano la asistencia que causó la corrida (así es como se
     // usa REVERTIR en la vida real: se deshacen los documentos Y se corrige
@@ -313,7 +320,7 @@ test("recorrido completo, ficha ficticia 9000001", async t => {
     assert.equal(resumen.casos.length, 0);
     assert.equal(resumen.errores.length, 0);
     const reg = leerRegistro();
-    assert.equal(reg.consecutivo, 0, "no se generó ningún documento nuevo");
+    assert.equal(reg.consecutivo, 5, "no se generó ningún documento nuevo (el 5 sigue siendo el del equipo ejecutor)");
   });
 
   await t.test("10. convertir a PDF sin modificar los .docx", { skip: !wordInstalado() && "Word no está instalado en este equipo" }, () => {
