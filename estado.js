@@ -41,7 +41,11 @@ function estadoNuevo(ficha) {
     aprendices_migrados: false,
     total_aprendices: 0,
     equipo_ejecutor: null,        // se llena con la extracción del horario
-    acta_equipo_ejecutor: null,   // { numero, fecha, archivo } cuando se genere
+    // (no hay campo para el acta de equipo ejecutor generada: ese registro
+    // vive en reg.equipoEjecutor[ficha] dentro de registro.json, no aquí —
+    // ver generarActaEquipoEjecutor en generar.js. Hubo un campo
+    // acta_equipo_ejecutor en este objeto que nada llenaba nunca; se quitó
+    // para no dejar un campo muerto que parezca un registro real.)
     sesiones_procesadas: [],      // fechas (encabezados de columna de ASISTENCIA) ya evaluadas
     actas_generadas: [],          // { fecha, documento, aprendiz, tipo, numero_acta, archivo }
     archivos_detectados: {},      // clasificación de la carpeta

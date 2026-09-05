@@ -271,8 +271,10 @@ pendiente 7).
   Word ya está abierto (no bloquea, pero el instructor debe cerrarlo antes).
 - **Reversión**: `revertir.js → revertirFecha(carpetaFicha, fecha, {simular})`.
   Ya sabe deshacer actas de aprendiz individuales y el acta de entrega
-  (`reg.entregas`). **No sabe nada de `reg.equipoEjecutor`** (estructura
-  nueva de este commit) — ver pendiente 5.
+  (`reg.entregas`); `recalcularConsecutivo` ya cuenta también
+  `reg.equipoEjecutor` al calcular el máximo. Pero **todavía no detecta ni
+  borra entradas de `reg.equipoEjecutor`** ni sus `.docx` — ver pendiente 5
+  (en curso, paso 1 de 3 hecho).
 
 ## Flujo "Inicializar trimestre" (conecta la plantilla maestra + sofia.js)
 
@@ -343,23 +345,53 @@ aprobación. Estado actual por función:
    falta alguno, en `procesarControl` y en `generarEntregaControl`.
 4. ~~**`generarEntregaControl` sin vista previa**~~ — **resuelto**: ahora
    tiene `simular` igual que `procesarControl`.
-5. **`revertirFecha` no sabe deshacer el acta de equipo ejecutor** — más
-   grande de lo que parecía al anotarlo (ver aclaración del instructor,
-   pendiente hasta retomarlo con contexto completo):
-   - El acta de equipo ejecutor **no vive en `registro.json`** como las
-     demás (a diferencia de lo que hace hoy `generarActaEquipoEjecutor`,
-     que le agregó `reg.equipoEjecutor[ficha]` — eso puede estar mal
-     ubicado). Vive en **`estado_ficha.json`**.
-   - Esa reunión puede haber **autorizado deserciones** de aprendices, que
-     también habría que revertir junto con el acta si la reunión se
-     deshace — no es solo borrar un `.docx` y una fila de HISTORICO.
-   - No tocar esto hasta que el instructor dé el contexto completo.
+5. **`revertirFecha` no sabe deshacer el acta de equipo ejecutor** — en
+   curso, dividido en tres pasos por el instructor, con contexto completo
+   sobre deserciones ya dado (corrige una nota anterior de este documento,
+   ver más abajo):
+   - **Contexto de deserción** (aclarado por el instructor): el acta de
+     equipo ejecutor es lo que AUTORIZA el reporte de deserción de un
+     aprendiz intermitente (caso B). Orden real: (1) el acta lista a los
+     aprendices con inasistencias y autoriza — esto ya existe; (2) se
+     genera el formato Excel de deserción (causa 01, FECHA DE INICIO DE
+     DESERCIÓN = la primera inasistencia injustificada, umbral 5
+     inasistencias injustificadas dentro del trimestre actual, sin
+     arrastrar del anterior) — **no construido todavía**; (3) el Forms lo
+     diligencia el instructor a mano, fuera de la app. La app solo cubre
+     (1) y (2). El caso más frecuente (A: aprendiz que deja de asistir sin
+     pasar por el acta, marcado a mano por el instructor en APRENDICES en
+     cuanto se entera) es 100% manual y ya funciona sin cambios
+     (`recibeLlamado()` ya excluye a quien no esté en `EN FORMACION`): no
+     hay hueco de reversión ahí porque la app nunca genera ni escribe nada
+     para ese caso. El ajuste por reintegro también es manual, no se
+     automatiza.
+   - **Paso 1 (hecho)**: `recalcularConsecutivo` (`revertir.js`) ahora
+     incluye `reg.equipoEjecutor[ficha]` en el cálculo del máximo — sin
+     esto, revertir cualquier otra acta de la ficha podía bajar
+     `reg.consecutivo` por debajo de un número de equipo ejecutor que
+     seguía en uso, y la siguiente acta generada lo reutilizaría sobre un
+     documento real distinto.
+   - **Paso 2 (pendiente)**: que `generarActaEquipoEjecutor` guarde la
+     ruta completa del `.docx` dentro de la entrada de
+     `reg.equipoEjecutor[ficha]`. Solo aplica a las actas nuevas; las
+     viejas quedan sin ruta.
+   - **Paso 3 (pendiente)**: que `revertirFecha` detecte y borre entradas
+     de `reg.equipoEjecutor[ficha]` con esa fecha. Si la entrada no tiene
+     ruta guardada (actas de antes del paso 2), no debe fallar en
+     silencio: debe borrar igual la entrada del registro y avisar en el
+     panel que ese `.docx` hay que borrarlo a mano, con el número de acta.
+   - La generación del `.xlsx` de deserción (paso 2 del flujo real, no
+     construido) y su reversión quedan fuera de este alcance — es
+     funcionalidad nueva, no un hueco de `revertirFecha`.
 6. ~~**"Convertir actas firmadas a PDF"**~~ — **resuelto**:
    `convertir_pdf.js`, envolviendo (sin rediseñar) la solución del
    instructor ya probada en producción (Word por automatización de
    PowerShell). Detecta Word instalado y si ya está abierto.
-7. **Posible duplicación `estado_ficha.json` / `registro.json`**: ligado al
-   punto 5 — el acta de equipo ejecutor demuestra que esto ya no es
-   hipotético: `generarActaEquipoEjecutor` guarda en `registro.json` un
-   dato que en realidad pertenece a `estado_ficha.json`. Aclarar cuál
-   manda en caso de choque antes de que la interfaz dependa de los dos.
+7. ~~**Posible duplicación `estado_ficha.json` / `registro.json`**~~ —
+   **resuelto**: era una nota equivocada de este documento, no un hueco
+   real. El acta de equipo ejecutor nunca vivió en `estado_ficha.json`:
+   `estado.js` traía un campo `acta_equipo_ejecutor` en `estadoNuevo()`
+   que nada llenaba nunca (`equipo_ejecutor.js` ni siquiera importa
+   `estado.js`); se quitó ese campo muerto. El único registro real,
+   siempre, fue `reg.equipoEjecutor[ficha]` en `registro.json` — no hay
+   duplicación ni conflicto que resolver.
