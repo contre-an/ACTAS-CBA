@@ -91,6 +91,16 @@ function quitarFilasHistorico(rutaControl, numeros) {
   return eliminadas;
 }
 
+// El numero de acta es compuesto (951210-XX-NNN, ver numeroActa() en
+// generar.js): NNN es el consecutivo propio de esta instalación, siempre el
+// último grupo de dígitos. parseInt directo sobre el numero completo daría
+// 951210 (se detiene en el primer guion), así que se extrae ese último
+// grupo en vez de asumir que el numero completo ya es un entero.
+function consecutivoPropio(numero) {
+  const m = String(numero).match(/(\d+)$/);
+  return m ? parseInt(m[1], 10) : 0;
+}
+
 // Recalcula reg.consecutivo como el número de acta más alto que sobreviva en
 // TODO el registro (todas las fichas), tras quitar lo revertido. Si lo que se
 // revirtió eran los números más altos, el consecutivo baja y no quedan huecos;
@@ -100,9 +110,9 @@ function recalcularConsecutivo(reg) {
   let max = 0;
   for (const clave of Object.keys(reg.aprendices || {}))
     for (const h of reg.aprendices[clave].historial || [])
-      max = Math.max(max, parseInt(h.numero, 10) || 0);
+      max = Math.max(max, consecutivoPropio(h.numero));
   for (const ficha of Object.keys(reg.entregas || {}))
-    max = Math.max(max, parseInt(reg.entregas[ficha].numero, 10) || 0);
+    max = Math.max(max, consecutivoPropio(reg.entregas[ficha].numero));
   reg.consecutivo = max;
 }
 

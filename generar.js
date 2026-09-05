@@ -16,6 +16,24 @@ const rutaRegistro = () => process.env.ACTAS_REGISTRO_RUTA
   : path.join(__dirname, "registro.json");
 const MESES = ["enero","febrero","marzo","abril","mayo","junio","julio","agosto","septiembre","octubre","noviembre","diciembre"];
 
+// ===== Numeración compuesta de actas: 951210-XX-NNN =====
+// 951210 = código del Centro de Biotecnología Agropecuaria, fijo.
+// XX = código corto del instructor (2 dígitos) — sale de la configuración
+//   de la app (ACTAS_CODIGO_INSTRUCTOR, igual patrón que ACTAS_REGISTRO_RUTA:
+//   el proceso principal de Electron lo fija antes de llamar a estas
+//   funciones, leyéndolo de configuracion.json). Todavía NO va en
+//   PARAMETROS a propósito — queda fácil de mover ahí más adelante, este es
+//   el único lugar donde habría que tocar el formato.
+// NNN = el consecutivo PROPIO de esa instalación (reg.consecutivo),
+//   siempre desde 001. Cada instalación numera independientemente: el
+//   identificador completo nunca se repite dentro del centro porque el
+//   código de instructor es distinto en cada una.
+const CODIGO_CENTRO = "951210";
+function numeroActa(consecutivo) {
+  const codigoInstructor = String(process.env.ACTAS_CODIGO_INSTRUCTOR ?? "00").padStart(2, "0").slice(-2);
+  return `${CODIGO_CENTRO}-${codigoInstructor}-${String(consecutivo).padStart(3, "0")}`;
+}
+
 function fechaLarga(d = new Date()) { return `${d.getDate()} de ${MESES[d.getMonth()]} de ${d.getFullYear()}`; }
 function fechaCorta(d = new Date()) {
   return `${String(d.getDate()).padStart(2,"0")}/${String(d.getMonth()+1).padStart(2,"0")}/${d.getFullYear()}`;
@@ -287,7 +305,7 @@ function construirActaEquipoEjecutor(d, numero) {
 function generarActaEquipoEjecutor(datos) {
   const reg = cargarRegistro();
   reg.consecutivo += 1;
-  const numero = String(reg.consecutivo).padStart(3, "0");
+  const numero = numeroActa(reg.consecutivo);
   const zip = new PizZip(fs.readFileSync(PLANTILLA)); // misma plantilla GOR-F-084 de siempre
   const doc = new Docxtemplater(zip, { paragraphLoop: true, linebreaks: true });
   doc.render(construirActaEquipoEjecutor(datos, numero));
@@ -302,7 +320,7 @@ function generarActaEquipoEjecutor(datos) {
 function generarActaEntrega(datos) {
   const reg = cargarRegistro();
   reg.consecutivo += 1;
-  const numero = String(reg.consecutivo).padStart(3, "0");
+  const numero = numeroActa(reg.consecutivo);
   const zip = new PizZip(fs.readFileSync(PLANTILLA_ENTREGA));
   const doc = new Docxtemplater(zip, { paragraphLoop: true, linebreaks: true });
   doc.render(construirActaEntrega(datos, numero));
@@ -330,7 +348,7 @@ function generarActa(datos) {
   }
 
   reg.consecutivo += 1;
-  const numero = String(reg.consecutivo).padStart(3, "0");
+  const numero = numeroActa(reg.consecutivo);
 
   let buffer;
   if (tipo === "INFORME_COMITE") {
