@@ -84,12 +84,81 @@ la carpeta del trimestre se recuerda entre sesiones
 | `revertir:ejecutar` | `revertirFecha(carpeta, fecha, {simular})` |
 | `inicializar:crearControl` | copia la plantilla maestra, abre el `.xlsx` en Excel |
 | `inicializar:migrarAprendices` | `leerReporteSofia` + `poblarAprendices` |
+| `config:obtener-carpeta-trimestre` | `carpetaTrimestreEfectiva()` (real o, en modo prueba, la carpeta demo) |
+| `config:obtener-codigo-instructor` / `config:guardar-codigo-instructor` | leen/escriben `configuracion.json`, alimentan `ACTAS_CODIGO_INSTRUCTOR` |
+| `modoPrueba:obtener` / `modoPrueba:alternar` / `modoPrueba:restablecer` | ver "Modo prueba" abajo |
 
 "Inicializar trimestre" queda como asistente de 2 pasos explícitos (crear
 control → el instructor llena PARAMETROS a mano en Excel → migrar
 aprendices), no un formulario único: PARAMETROS lo sigue llenando el
 instructor a mano, la app no lo automatiza (ver pendiente 3, ya resuelto en
 ese sentido).
+
+### Modo prueba
+
+Interruptor visible en el encabezado (`src/main/modoPrueba.js`), pensado
+para hacer pruebas repetidas o demostrar la app en el computador de un
+compañero sin arriesgar un solo archivo real. Con el modo prendido:
+
+- `aplicarVariablesDeEntorno()` (en `ipc.js`) pone
+  `ACTAS_REGISTRO_RUTA=userData/modo_prueba/registro.pruebas.json` — el
+  mismo mecanismo de aislamiento que ya usaba la prueba automatizada
+  (`generar.js` lo lee en cada llamada, nunca lo cachea).
+- `carpetaTrimestreEfectiva()` devuelve `userData/modo_prueba/trimestre_demo/`
+  en vez de la carpeta real configurada; ahí vive una única ficha ficticia
+  ("0000000 - FICHA DE DEMOSTRACIÓN (MODO PRUEBA)") que `asegurarFichaDemo()`
+  arma automáticamente si no existe.
+- "Inicializar trimestre" queda deshabilitado (`bloquearSiModoPrueba()`):
+  implica diálogos nativos de carpeta/archivo del sistema operativo, que no
+  tiene sentido ni es seguro simular.
+- "Restablecer modo prueba" borra y reconstruye SOLO
+  `userData/modo_prueba/` (registro de pruebas + ficha demo). Nunca toca
+  `registro.json` ni ninguna carpeta de ficha real.
+- Al apagar el modo, producción sigue exactamente donde estaba: su
+  `registro.json` nunca se tocó mientras el modo estuvo prendido, porque
+  `ACTAS_REGISTRO_RUTA` apuntaba a otro archivo todo ese tiempo.
+
+Verificado con Playwright: activar → generar acta dentro del sandbox →
+confirmar que la carpeta y el registro reales no cambiaron en absoluto →
+restablecer → apagar → confirmar que se vuelve a producción intacta.
+
+### Numeración compuesta de actas
+
+El número de acta es `951210-XX-NNN`: `951210` es el código fijo del Centro
+de Biotecnología Agropecuaria (constante `CODIGO_CENTRO` en `generar.js`),
+`XX` el código corto del instructor (dos dígitos, configurado en la app
+junto a la carpeta del trimestre — `config:guardar-codigo-instructor`,
+alimenta `ACTAS_CODIGO_INSTRUCTOR`), y `NNN` el consecutivo propio de ese
+instructor desde 001. Deliberadamente NO vive en PARAMETROS todavía —
+queda fácil de mover ahí más adelante si hace falta, pero por ahora el
+centro va fijo en código y el instructor en la configuración de la app.
+
+`revertir.js` extrae el consecutivo propio con una expresión regular sobre
+el grupo de dígitos final (`consecutivoPropio`, `/(\d+)$/`) en vez de
+`parseInt` directo sobre el número completo — `parseInt("951210-07-001")`
+daría `951210`, no `1`.
+
+### Identidad visual
+
+Verde institucional del SENA (`#39A900`, variable `--acento` en
+`estilos.css`) como color principal, sobre grises y blancos ya existentes;
+franja verde superior en el encabezado. Crédito discreto en el pie de
+página: "Desarrollado por Carlos José Gregorio Contreras Vivas"
+(`footer.credito` en `index.html`/`estilos.css`).
+
+### Visión a futuro (dirección, no construido)
+
+Si esta versión es aceptada, la siguiente etapa sería comunicar las
+instalaciones entre sí: que el acta de equipo ejecutor recoja
+automáticamente las novedades de TODOS los instructores de la ficha
+(hoy solo trae las del instructor que la genera; las demás filas quedan
+vacías "para diligenciar en la reunión" — ver `equipo_ejecutor.js`), en
+vez de depender de que cada quien la diligencie a mano en la reunión.
+Ninguna decisión de esta versión debería estorbar ese camino: en
+particular, `equipo_ejecutor.js` ya separa "novedades propias" (calculadas)
+de "filas vacías de los demás" como una lista, no como un hueco fijo en la
+plantilla — llenar esas filas desde otras instalaciones sería agregar un
+insumo más a esa misma lista, no rediseñar el flujo.
 
 ### Verificación (no solo "abre la ventana")
 
@@ -141,14 +210,31 @@ iba a pasar. No "debería funcionar": se leyó la salida real cada vez.
   desde un reporte de SOFIA ficticio (con un caso EN INDUCCIÓN, para
   confirmar la corrección) sobre la ficha recién creada.
 
-Dos bugs reales aparecieron en el proceso y se corrigieron, ninguno
+Varios bugs reales aparecieron en el proceso y se corrigieron, ninguno
 hipotético:
 - **CSS**: `.modal-overlay { display: flex }` (una clase) le ganaba en
   especificidad al `[hidden] { display: none }` del navegador (un
   atributo), así que el modal de vista previa se veía SIEMPRE, vacío, desde
   el primer instante. Arreglado con `.modal-overlay[hidden] { display: none }`.
+- **El mismo patrón se repitió con el banner de modo prueba**
+  (`.banner-modo-prueba { display: flex }`): se veía siempre, con o sin
+  modo prueba activo. Pasó inadvertido en la primera verificación porque
+  el script de Playwright solo leía la propiedad DOM `.hidden` (que sí
+  reflejaba el atributo correctamente) y nunca el estilo calculado real —
+  lo delató una captura de pantalla al ajustar los colores institucionales.
+  Arreglado igual: `.banner-modo-prueba[hidden] { display: none }`.
+  Lección: verificar con Playwright el atributo `hidden` no basta; hay que
+  mirar el render (captura de pantalla o `getComputedStyle`) para cualquier
+  elemento que se oculte con `[hidden]` y tenga también una clase con
+  `display`.
 - **Día UTC vs. local, en la propia prueba automatizada** — ver la regla
   del proyecto al inicio de este documento.
+- **Cero falsy en JavaScript**: `crearFichaDemo()` (modo prueba) ponía
+  `FICHA = 0` en PARAMETROS; `leerControl` usa
+  `if (!params.ficha || !params.programa) throw`, y `0` es falsy en JS, así
+  que la ficha de demostración siempre salía como "PARAMETROS incompletos".
+  Arreglado usando un valor de ficha no numérico truthy (`"0000000"` como
+  cadena) en la ficha ficticia.
 
 ## Módulos y su responsabilidad
 
