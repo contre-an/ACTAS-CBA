@@ -142,6 +142,8 @@ function revertirFecha(carpetaFicha, fecha, { simular = true } = {}) {
 
   const actasRevertidas = [];   // { aprendiz, documento, numero, tipo, archivo }
   let entregaRevertida = null;  // { numero, archivo }
+  const equipoEjecutorRevertido = []; // { numero, fecha, ruta }
+  const avisos = [];
 
   for (const clave of Object.keys(reg.aprendices)) {
     if (!clave.startsWith(`${ficha}-`)) continue;
@@ -170,17 +172,35 @@ function revertirFecha(carpetaFicha, fecha, { simular = true } = {}) {
     delete reg.entregas[ficha];
   }
 
+  // Actas de equipo ejecutor de esa fecha (pendiente 5, paso 3). Si
+  // reg.equipoEjecutor no existe (registro.json de antes de esa
+  // estructura), Array.isArray da false y no pasa nada.
+  if (Array.isArray(reg.equipoEjecutor?.[ficha])) {
+    const quedan = [];
+    for (const e of reg.equipoEjecutor[ficha]) {
+      if (e.fecha !== ddmmaaaa) { quedan.push(e); continue; }
+      equipoEjecutorRevertido.push({ numero: e.numero, fecha: e.fecha, ruta: e.ruta || null });
+      // Actas de antes del paso 2 (que guarda la ruta): no hay dónde
+      // buscar el archivo. Se quita igual la entrada del registro, pero
+      // se avisa en vez de fallar en silencio o intentar adivinar.
+      if (!e.ruta)
+        avisos.push(`El acta de equipo ejecutor ${e.numero} (ficha ${ficha}, ${e.fecha}) no tiene guardada la ruta de su .docx: se quita del registro, pero hay que borrarlo a mano.`);
+    }
+    if (quedan.length) reg.equipoEjecutor[ficha] = quedan;
+    else delete reg.equipoEjecutor[ficha];
+  }
+
   const consecutivoAntes = reg.consecutivo;
   recalcularConsecutivo(reg);
 
   const reporte = {
     ficha, fecha: ddmmaaaa, simulado: simular,
-    actasRevertidas, entregaRevertida,
+    actasRevertidas, entregaRevertida, equipoEjecutorRevertido, avisos,
     consecutivoAntes, consecutivoDespues: reg.consecutivo,
     archivosBorrados: [], historicoFilasEliminadas: 0, respaldos: [],
   };
 
-  if (!actasRevertidas.length && !entregaRevertida) {
+  if (!actasRevertidas.length && !entregaRevertida && !equipoEjecutorRevertido.length) {
     reporte.mensaje = `No hay nada registrado con fecha ${ddmmaaaa} para la ficha ${ficha}.`;
     return reporte;
   }
@@ -227,7 +247,15 @@ function revertirFecha(carpetaFicha, fecha, { simular = true } = {}) {
   }
   if (entregaRevertida) borrarSiExiste(path.join(carpetaFicha, entregaRevertida.archivo));
 
-  const numerosARevertir = [...actasRevertidas.map(a => a.numero), ...(entregaRevertida ? [entregaRevertida.numero] : [])];
+  // Solo las que sí tienen ruta: las que no, ya quedaron avisadas arriba
+  // y no hay nada que intentar borrar aquí.
+  for (const e of equipoEjecutorRevertido) if (e.ruta) borrarSiExiste(e.ruta);
+
+  const numerosARevertir = [
+    ...actasRevertidas.map(a => a.numero),
+    ...(entregaRevertida ? [entregaRevertida.numero] : []),
+    ...equipoEjecutorRevertido.map(e => e.numero),
+  ];
   reporte.historicoFilasEliminadas = quitarFilasHistorico(rutaControl, numerosARevertir);
 
   // Si algún archivo no se pudo borrar de verdad, no se sobrescribe el

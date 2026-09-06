@@ -270,11 +270,13 @@ pendiente 7).
   Requiere Word instalado (única dependencia externa de la app); avisa si
   Word ya está abierto (no bloquea, pero el instructor debe cerrarlo antes).
 - **Reversión**: `revertir.js → revertirFecha(carpetaFicha, fecha, {simular})`.
-  Ya sabe deshacer actas de aprendiz individuales y el acta de entrega
-  (`reg.entregas`); `recalcularConsecutivo` ya cuenta también
-  `reg.equipoEjecutor` al calcular el máximo. Pero **todavía no detecta ni
-  borra entradas de `reg.equipoEjecutor`** ni sus `.docx` — ver pendiente 5
-  (en curso, paso 1 de 3 hecho).
+  Deshace actas de aprendiz individuales, el acta de entrega (`reg.entregas`)
+  y las actas de equipo ejecutor (`reg.equipoEjecutor`) de la fecha
+  revertida — borra el `.docx` cuando conoce su ruta, avisa sin fallar
+  cuando no la conoce (actas de antes de que se empezara a guardar), y dejar
+  otras fechas de `reg.equipoEjecutor` intactas. Pendiente 5 cerrado (los 3
+  pasos hechos). Queda abierto el pendiente 8: el `.pdf` convertido de una
+  acta no se borra junto con su `.docx` al revertir.
 
 ## Flujo "Inicializar trimestre" (conecta la plantilla maestra + sofia.js)
 
@@ -345,10 +347,10 @@ aprobación. Estado actual por función:
    falta alguno, en `procesarControl` y en `generarEntregaControl`.
 4. ~~**`generarEntregaControl` sin vista previa**~~ — **resuelto**: ahora
    tiene `simular` igual que `procesarControl`.
-5. **`revertirFecha` no sabe deshacer el acta de equipo ejecutor** — en
-   curso, dividido en tres pasos por el instructor, con contexto completo
-   sobre deserciones ya dado (corrige una nota anterior de este documento,
-   ver más abajo):
+5. ~~**`revertirFecha` no sabe deshacer el acta de equipo ejecutor**~~ —
+   **resuelto**, en tres pasos acordados con el instructor, con contexto
+   completo sobre deserciones ya dado (corrige una nota anterior de este
+   documento, ver más abajo):
    - **Contexto de deserción** (aclarado por el instructor): el acta de
      equipo ejecutor es lo que AUTORIZA el reporte de deserción de un
      aprendiz intermitente (caso B). Orden real: (1) el acta lista a los
@@ -379,11 +381,20 @@ aprobación. Estado actual por función:
      (en `generar.js`) no lo hace directamente porque no conoce la carpeta
      de salida ni el nombre del archivo; eso lo decide quien la llama.
      Solo aplica a las actas nuevas; las viejas quedan sin `ruta`.
-   - **Paso 3 (pendiente)**: que `revertirFecha` detecte y borre entradas
-     de `reg.equipoEjecutor[ficha]` con esa fecha. Si la entrada no tiene
-     ruta guardada (actas de antes del paso 2), no debe fallar en
-     silencio: debe borrar igual la entrada del registro y avisar en el
-     panel que ese `.docx` hay que borrarlo a mano, con el número de acta.
+   - **Paso 3 (hecho)**: `revertirFecha` ahora detecta las entradas de
+     `reg.equipoEjecutor[ficha]` cuya fecha coincida con la revertida, las
+     incluye en `numerosARevertir` (para el HISTORICO y el consecutivo, ya
+     cubiertos por el paso 1), y borra su `.docx` con la misma comprobación
+     de borrado sostenido que ya usan los llamados y la entrega. Si una
+     entrada no tiene `ruta` (actas de antes del paso 2), no falla en
+     silencio: se quita igual del registro y se agrega un mensaje a
+     `reporte.avisos` (ficha, fecha y número de acta) para que el
+     instructor la borre a mano — mostrado en el panel de revertir con la
+     misma clase `aviso` que usan los demás paneles. Las entradas de OTRAS
+     fechas para la misma ficha no se tocan (probado explícitamente: dos
+     entradas con fechas distintas, revertir una deja la otra intacta, con
+     su `.docx` sin borrar y sin que se elimine la clave de la ficha en
+     `reg.equipoEjecutor`).
    - La generación del `.xlsx` de deserción (paso 2 del flujo real, no
      construido) y su reversión quedan fuera de este alcance — es
      funcionalidad nueva, no un hueco de `revertirFecha`.
@@ -399,3 +410,16 @@ aprobación. Estado actual por función:
    `estado.js`); se quitó ese campo muerto. El único registro real,
    siempre, fue `reg.equipoEjecutor[ficha]` en `registro.json` — no hay
    duplicación ni conflicto que resolver.
+8. **`revertirFecha` borra el `.docx` pero no el `.pdf` convertido** —
+   anotado por el instructor, sin implementar todavía. Si un acta ya se
+   convirtió a PDF (`convertir_pdf.js`) y luego se revierte esa fecha,
+   `borrarSiExiste` borra el `.docx` pero el `.pdf` hermano queda huérfano
+   en la carpeta. El PDF es el documento que circula firmado, así que
+   dejarlo huérfano con un número de acta que el consecutivo ya volvió a
+   dejar libre para reutilizar es el mismo problema de fondo que
+   `recalcularConsecutivo` resuelve para el registro (pendiente 5, paso 1):
+   un número que sigue "vivo" en un documento real, sin que el sistema lo
+   sepa. Aplica al acta de equipo ejecutor y probablemente también a los
+   llamados/entrega — cualquier acta que se haya convertido a PDF antes de
+   revertirla. No tocar hasta decidir el diseño (¿`revertirFecha` borra el
+   `.pdf` si existe? ¿solo avisa, como con el `.docx` sin ruta?).

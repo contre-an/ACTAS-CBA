@@ -286,9 +286,15 @@ el("btn-revertir").addEventListener("click", () => {
     renderizar: ({ error, resultado }) => {
       if (error) return `<p class="error-texto">${escapeHtml(error)}</p>`;
       if (resultado.mensaje) return `<p><em>${escapeHtml(resultado.mensaje)}</em></p>`;
-      const partes = [`<p>${resultado.actasRevertidas.length} acta(s) a revertir` + (resultado.entregaRevertida ? " + acta de entrega" : "") + ".</p>"];
+      const partes = [`<p>${resultado.actasRevertidas.length} acta(s) a revertir`
+        + (resultado.entregaRevertida ? " + acta de entrega" : "")
+        + (resultado.equipoEjecutorRevertido.length ? ` + ${resultado.equipoEjecutorRevertido.length} acta(s) de equipo ejecutor` : "")
+        + ".</p>"];
       partes.push("<ul>" + resultado.actasRevertidas.map(a => `<li>${escapeHtml(a.aprendiz)} — ${escapeHtml(etiquetaMedida(a.tipo))} (acta ${escapeHtml(a.numero)})</li>`).join("") + "</ul>");
+      if (resultado.equipoEjecutorRevertido.length)
+        partes.push("<ul>" + resultado.equipoEjecutorRevertido.map(e => `<li>Acta de equipo ejecutor ${escapeHtml(e.numero)} (${escapeHtml(e.fecha)})${e.ruta ? "" : " — sin ruta guardada, borrar el .docx a mano"}</li>`).join("") + "</ul>");
       partes.push(`<p>Consecutivo: ${resultado.consecutivoAntes} → ${resultado.consecutivoDespues}${resultado.simulado ? " (si apruebas)" : ""}.</p>`);
+      if (resultado.avisos?.length) partes.push(resultado.avisos.map(a => `<p class="aviso">${escapeHtml(a)}</p>`).join(""));
       if (!resultado.simulado) partes.push(`<p class="exito-texto">${resultado.archivosBorrados.length} archivo(s) borrado(s) de verdad. Respaldos: ${resultado.respaldos.map(escapeHtml).join(", ")}</p>`);
       return partes.join("");
     },

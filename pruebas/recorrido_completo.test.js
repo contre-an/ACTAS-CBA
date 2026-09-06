@@ -9,7 +9,7 @@
 // crear al empezar, para que la prueba sea repetible.
 //
 // Qué cubre cada paso, y por qué: ver los comentarios en el cuerpo del test.
-// Los pasos 3, 5 y 9 son los críticos según el encargo: el corte por fecha
+// Los pasos 3, 5 y 10 son los críticos según el encargo: el corte por fecha
 // debe compararse por DÍA, no por marca de tiempo completa (las fechas que
 // trae un .xlsx real arrastran segundos de desfase). Por eso las fechas de
 // sesión de esta prueba llevan segundos distintos de cero a propósito: si
@@ -29,7 +29,7 @@ process.env.ACTAS_REGISTRO_RUTA = path.join(CARPETA, "registro.json");
 const { leerReporteSofia, poblarAprendices } = require("../sofia");
 const { procesarControl, leerControl } = require("../procesar");
 const { prepararActaEquipoEjecutor } = require("../equipo_ejecutor");
-const { revertirFecha } = require("../revertir");
+const { revertirFecha, normalizarFecha } = require("../revertir");
 const { convertirPdf, wordInstalado } = require("../convertir_pdf");
 
 const RUTA_PLANTILLA = path.join(__dirname, "..", "PLANTILLA_MAESTRA_CONTROL_ASISTENCIA V3.xlsx");
@@ -283,53 +283,10 @@ test("recorrido completo, ficha ficticia 9000001", async t => {
     assert.equal(entrada.ruta, rutaActaEquipoEjecutor);
   });
 
-  await t.test("8. revertir todo lo de esa fecha: registro y consecutivo como antes", () => {
-    const hoyISO = hoyISOLocal();
-    const antes = leerRegistro();
-
-    const previa = revertirFecha(CARPETA, hoyISO); // simular=true por defecto
-    assert.equal(previa.actasRevertidas.length, 4, "las 4 actas de Juan Carlos, generadas hoy");
-
-    const resultado = revertirFecha(CARPETA, hoyISO, { simular: false });
-    assert.equal(resultado.archivosBorrados.length, 4);
-
-    const regDespues = leerRegistro();
-    assert.equal(regDespues.aprendices[`${FICHA}-100000001`], undefined, "el aprendiz vuelve a quedar limpio");
-    // El acta de equipo ejecutor del paso 7 usó el numero 5 y sigue
-    // "viva" (revertirFecha todavía no la conoce, ver nota abajo), así que
-    // el consecutivo correcto tras revertir las 4 de Juan Carlos es 5, no 0
-    // (paso 1 de 3 del pendiente ya resuelto: recalcularConsecutivo ahora
-    // SÍ cuenta reg.equipoEjecutor).
-    assert.equal(regDespues.consecutivo, 5, "el numero del equipo ejecutor sigue en uso y no debe reutilizarse");
-
-    for (const h of antes.aprendices[`${FICHA}-100000001`].historial)
-      assert.ok(!fs.existsSync(path.join(CARPETA_ACTAS, h.archivo)), `${h.archivo} debió borrarse`);
-
-    // CONOCIDO (ver ARQUITECTURA.md, pendiente 5, pasos 2 y 3): revertirFecha
-    // todavía no detecta ni borra entradas de reg.equipoEjecutor. El acta de
-    // equipo ejecutor del paso 7 SOBREVIVE a "revertir todo lo de esa
-    // fecha": el archivo sigue en disco y la entrada sigue en el registro
-    // (su número sí se cuenta ahora para el consecutivo — eso ya se
-    // resolvió arriba). Esta prueba deja eso visible a propósito, en vez de
-    // esconderlo: el día que se resuelva (pasos 2/3), esta aserción va a
-    // fallar y va a recordar actualizarla.
-    assert.ok(fs.existsSync(rutaActaEquipoEjecutor), "gap conocido: el .docx de equipo ejecutor no se borra (todavía)");
-
-    // Se corrige a mano la asistencia que causó la corrida (así es como se
-    // usa REVERTIR en la vida real: se deshacen los documentos Y se corrige
-    // el dato de origen que estaba mal, antes de volver a procesar).
-    actualizarHoja(RUTA_CONTROL, "ASISTENCIA", filas => { for (const s of SESIONES) filas[1][s.col] = "X"; });
-  });
-
-  await t.test("9. volver a ejecutar tras la reversión (y la corrección) -> CERO", () => {
-    const resumen = procesarControl(RUTA_CONTROL, false, false);
-    assert.equal(resumen.casos.length, 0);
-    assert.equal(resumen.errores.length, 0);
-    const reg = leerRegistro();
-    assert.equal(reg.consecutivo, 5, "no se generó ningún documento nuevo (el 5 sigue siendo el del equipo ejecutor)");
-  });
-
-  await t.test("10. convertir a PDF sin modificar los .docx", { skip: !wordInstalado() && "Word no está instalado en este equipo" }, () => {
+  await t.test("8. convertir a PDF sin modificar los .docx", { skip: !wordInstalado() && "Word no está instalado en este equipo" }, () => {
+    // Se convierte AQUÍ, antes de revertir: el paso 9 va a borrar este
+    // mismo .docx (revierte "hoy", y esta acta es de hoy), así que probar
+    // la conversión tiene que pasar mientras el archivo todavía existe.
     const antes = fs.readFileSync(rutaActaEquipoEjecutor);
     const resultado = convertirPdf(CARPETA, { simular: false });
     assert.ok(resultado.convertidos.includes(path.basename(rutaActaEquipoEjecutor)));
@@ -338,5 +295,103 @@ test("recorrido completo, ficha ficticia 9000001", async t => {
     const despues = fs.readFileSync(rutaActaEquipoEjecutor);
     assert.ok(antes.equals(despues), "el .docx no debe modificarse al convertir (se abre en solo lectura)");
     assert.ok(fs.existsSync(rutaActaEquipoEjecutor.replace(/\.docx$/, ".pdf")));
+  });
+
+  await t.test("9. revertir todo lo de esa fecha: registro y consecutivo como antes", () => {
+    const hoyISO = hoyISOLocal();
+    const antes = leerRegistro();
+
+    const previa = revertirFecha(CARPETA, hoyISO); // simular=true por defecto
+    assert.equal(previa.actasRevertidas.length, 4, "las 4 actas de Juan Carlos, generadas hoy");
+    assert.equal(previa.equipoEjecutorRevertido.length, 1, "el acta de equipo ejecutor del paso 7, generada hoy");
+    assert.equal(previa.equipoEjecutorRevertido[0].ruta, rutaActaEquipoEjecutor);
+    assert.equal(previa.avisos.length, 0, "esta acta sí tiene ruta guardada (paso 2): no hace falta avisar nada");
+
+    const resultado = revertirFecha(CARPETA, hoyISO, { simular: false });
+    assert.equal(resultado.archivosBorrados.length, 5, "las 4 actas de Juan Carlos + el acta de equipo ejecutor");
+    assert.ok(!fs.existsSync(rutaActaEquipoEjecutor), "el .docx de equipo ejecutor también se borra (paso 3 del pendiente)");
+
+    const regDespues = leerRegistro();
+    assert.equal(regDespues.aprendices[`${FICHA}-100000001`], undefined, "el aprendiz vuelve a quedar limpio");
+    assert.equal(regDespues.equipoEjecutor[String(FICHA)], undefined, "la ficha queda limpia también en equipoEjecutor");
+    assert.equal(regDespues.consecutivo, 0, "no queda ningún numero de esta ficha en uso (ni llamados ni equipo ejecutor)");
+
+    for (const h of antes.aprendices[`${FICHA}-100000001`].historial)
+      assert.ok(!fs.existsSync(path.join(CARPETA_ACTAS, h.archivo)), `${h.archivo} debió borrarse`);
+
+    // Se corrige a mano la asistencia que causó la corrida (así es como se
+    // usa REVERTIR en la vida real: se deshacen los documentos Y se corrige
+    // el dato de origen que estaba mal, antes de volver a procesar).
+    actualizarHoja(RUTA_CONTROL, "ASISTENCIA", filas => { for (const s of SESIONES) filas[1][s.col] = "X"; });
+  });
+
+  await t.test("10. volver a ejecutar tras la reversión (y la corrección) -> CERO", () => {
+    const resumen = procesarControl(RUTA_CONTROL, false, false);
+    assert.equal(resumen.casos.length, 0);
+    assert.equal(resumen.errores.length, 0);
+    const reg = leerRegistro();
+    assert.equal(reg.consecutivo, 0, "no se generó ningún documento nuevo");
+  });
+
+  await t.test("11. revertir un acta de equipo ejecutor sin ruta guardada (de antes del paso 2): avisa, no falla, y borra la entrada", () => {
+    // Simula una entrada vieja: solo numero y fecha, sin "ruta" (como
+    // quedaban las actas generadas antes del paso 2 del pendiente).
+    const hoyISO = hoyISOLocal();
+    const { ddmmaaaa } = normalizarFecha(hoyISO);
+    const numeroSinRuta = "951210-00-999";
+    const reg = leerRegistro();
+    reg.equipoEjecutor = { [String(FICHA)]: [{ numero: numeroSinRuta, fecha: ddmmaaaa }] };
+    fs.writeFileSync(process.env.ACTAS_REGISTRO_RUTA, JSON.stringify(reg, null, 2));
+
+    const previa = revertirFecha(CARPETA, hoyISO); // simular=true por defecto
+    assert.equal(previa.equipoEjecutorRevertido.length, 1);
+    assert.equal(previa.equipoEjecutorRevertido[0].ruta, null);
+    assert.equal(previa.avisos.length, 1);
+    assert.match(previa.avisos[0], new RegExp(numeroSinRuta));
+    assert.match(previa.avisos[0], new RegExp(String(FICHA)));
+    assert.match(previa.avisos[0], new RegExp(ddmmaaaa.replace(/\//g, "\\/")));
+
+    const resultado = revertirFecha(CARPETA, hoyISO, { simular: false }); // no debe lanzar
+    assert.equal(resultado.avisos.length, 1);
+    assert.equal(resultado.archivosNoBorrados.length, 0, "no se intentó borrar nada: no hay ruta que intentar, eso no es un fallo de borrado");
+
+    const regDespues = leerRegistro();
+    assert.equal(regDespues.equipoEjecutor[String(FICHA)], undefined, "la entrada sin ruta se quita igual del registro");
+    assert.equal(regDespues.consecutivo, 0);
+  });
+
+  await t.test("12. revertir una fecha no debe tocar las actas de equipo ejecutor de OTRAS fechas", () => {
+    // Dos entradas de equipo ejecutor con fechas distintas: revertir una
+    // no debe tocar la otra ni borrar la clave de la ficha en
+    // reg.equipoEjecutor (es donde más fácil se rompe: un revert de más).
+    const hoyISO = hoyISOLocal();
+    const { ddmmaaaa: fechaHoy } = normalizarFecha(hoyISO);
+    const fechaVieja = "01/01/2026";
+
+    const rutaHoy = path.join(CARPETA, "ACTA_951210-00-201_EQUIPO_EJECUTOR_FICHA_DUMMY_HOY.docx");
+    const rutaVieja = path.join(CARPETA, "ACTA_951210-00-202_EQUIPO_EJECUTOR_FICHA_DUMMY_VIEJA.docx");
+    fs.writeFileSync(rutaHoy, "dummy hoy");
+    fs.writeFileSync(rutaVieja, "dummy vieja");
+
+    const reg = leerRegistro();
+    reg.equipoEjecutor = { [String(FICHA)]: [
+      { numero: "951210-00-201", fecha: fechaHoy, ruta: rutaHoy },
+      { numero: "951210-00-202", fecha: fechaVieja, ruta: rutaVieja },
+    ] };
+    fs.writeFileSync(process.env.ACTAS_REGISTRO_RUTA, JSON.stringify(reg, null, 2));
+
+    const previa = revertirFecha(CARPETA, hoyISO); // simular=true por defecto
+    assert.equal(previa.equipoEjecutorRevertido.length, 1, "solo la de hoy, no la de otra fecha");
+    assert.equal(previa.equipoEjecutorRevertido[0].numero, "951210-00-201");
+
+    revertirFecha(CARPETA, hoyISO, { simular: false });
+
+    assert.ok(!fs.existsSync(rutaHoy), "se borra el .docx de la fecha revertida");
+    assert.ok(fs.existsSync(rutaVieja), "el .docx de la OTRA fecha no se toca");
+
+    const regDespues = leerRegistro();
+    assert.ok(Array.isArray(regDespues.equipoEjecutor[String(FICHA)]), "la clave de la ficha NO se elimina: le queda la otra entrada");
+    assert.equal(regDespues.equipoEjecutor[String(FICHA)].length, 1);
+    assert.equal(regDespues.equipoEjecutor[String(FICHA)][0].numero, "951210-00-202", "la entrada de la otra fecha sobrevive intacta");
   });
 });
