@@ -140,6 +140,17 @@ function revertirFecha(carpetaFicha, fecha, { simular = true } = {}) {
   const regOriginal = cargarRegistro();
   const reg = JSON.parse(JSON.stringify(regOriginal)); // se muta una copia; solo se persiste si simular=false
 
+  const carpetaActas = path.join(carpetaFicha, "LLAMADOS DE ATENCION");
+  // Ruta del .pdf ya convertido de un .docx, si existe. Se calcula desde ya
+  // (también durante simular=true) para que la vista previa pueda decir
+  // explícitamente que también se va a borrar. No hay ningún dato guardado
+  // sobre conversión a PDF en ningún lado (pendiente 8): el único rastro
+  // es el archivo mismo.
+  const pdfSiExiste = rutaDocx => {
+    const rutaPdf = rutaDocx.replace(/\.docx$/i, ".pdf");
+    return fs.existsSync(rutaPdf) ? rutaPdf : null;
+  };
+
   const actasRevertidas = [];   // { aprendiz, documento, numero, tipo, archivo }
   let entregaRevertida = null;  // { numero, archivo }
   const equipoEjecutorRevertido = []; // { numero, fecha, ruta }
@@ -153,6 +164,7 @@ function revertirFecha(carpetaFicha, fecha, { simular = true } = {}) {
       actasRevertidas.push({
         aprendiz: ultimo.nombre, documento: clave.slice(ficha.length + 1),
         numero: ultimo.numero, tipo: ultimo.tipo, archivo: ultimo.archivo || null,
+        pdf: ultimo.archivo ? pdfSiExiste(path.join(carpetaActas, ultimo.archivo)) : null,
       });
       // el aprendiz vuelve a quedar como estaba justo antes de esta acta
       ap.ultimaFechaIncidente = ultimo.fechaCorteAntes ?? null;
@@ -168,7 +180,8 @@ function revertirFecha(carpetaFicha, fecha, { simular = true } = {}) {
 
   if (reg.entregas?.[ficha]?.fecha === ddmmaaaa) {
     const e = reg.entregas[ficha];
-    entregaRevertida = { numero: e.numero, archivo: `ACTA_ENTREGA_${e.numero}_FICHA_${ficha}.docx` };
+    const archivoEntrega = `ACTA_ENTREGA_${e.numero}_FICHA_${ficha}.docx`;
+    entregaRevertida = { numero: e.numero, archivo: archivoEntrega, pdf: pdfSiExiste(path.join(carpetaFicha, archivoEntrega)) };
     delete reg.entregas[ficha];
   }
 
@@ -179,7 +192,7 @@ function revertirFecha(carpetaFicha, fecha, { simular = true } = {}) {
     const quedan = [];
     for (const e of reg.equipoEjecutor[ficha]) {
       if (e.fecha !== ddmmaaaa) { quedan.push(e); continue; }
-      equipoEjecutorRevertido.push({ numero: e.numero, fecha: e.fecha, ruta: e.ruta || null });
+      equipoEjecutorRevertido.push({ numero: e.numero, fecha: e.fecha, ruta: e.ruta || null, pdf: e.ruta ? pdfSiExiste(e.ruta) : null });
       // Actas de antes del paso 2 (que guarda la ruta): no hay dónde
       // buscar el archivo. Se quita igual la entrada del registro, pero
       // se avisa en vez de fallar en silencio o intentar adivinar.
@@ -197,7 +210,7 @@ function revertirFecha(carpetaFicha, fecha, { simular = true } = {}) {
     ficha, fecha: ddmmaaaa, simulado: simular,
     actasRevertidas, entregaRevertida, equipoEjecutorRevertido, avisos,
     consecutivoAntes, consecutivoDespues: reg.consecutivo,
-    archivosBorrados: [], historicoFilasEliminadas: 0, respaldos: [],
+    archivosBorrados: [], pdfsBorrados: [], historicoFilasEliminadas: 0, respaldos: [],
   };
 
   if (!actasRevertidas.length && !entregaRevertida && !equipoEjecutorRevertido.length) {
@@ -223,7 +236,6 @@ function revertirFecha(carpetaFicha, fecha, { simular = true } = {}) {
   fs.copyFileSync(rutaControl, respaldoControl);
   reporte.respaldos.push(respaldoControl);
 
-  const carpetaActas = path.join(carpetaFicha, "LLAMADOS DE ATENCION");
   reporte.archivosNoBorrados = [];
 
   // Borra y COMPRUEBA que de verdad quedó borrado: en el sistema anterior el
@@ -236,20 +248,34 @@ function revertirFecha(carpetaFicha, fecha, { simular = true } = {}) {
     if (fs.existsSync(ruta)) reporte.archivosNoBorrados.push(`${ruta} (el sistema no reportó error, pero el archivo sigue ahí)`);
     else reporte.archivosBorrados.push(ruta);
   };
+
+  // El .pdf de una acta revertida, a diferencia del .docx, NO aborta la
+  // reversión si no se puede borrar (Adobe/Edge u otro visor abierto): el
+  // .docx sí quedó revertido y el registro sí debe actualizarse — dejar de
+  // revertir una medida disciplinaria por un PDF bloqueado sería peor que
+  // el PDF huérfano en sí. Se avisa con la ruta completa en vez de fallar.
+  const borrarPdfSiExiste = rutaPdf => {
+    if (!rutaPdf || !fs.existsSync(rutaPdf)) return;
+    const avisar = () => avisos.push(`El PDF de una acta revertida no se pudo borrar (${rutaPdf}): puede estar abierto en Adobe, Edge u otro visor. Ciérralo y bórralo a mano — mientras exista, "Convertir a PDF" no va a generar el PDF de la nueva versión de esta acta con el mismo número.`);
+    try { fs.unlinkSync(rutaPdf); } catch { avisar(); return; }
+    if (fs.existsSync(rutaPdf)) avisar();
+    else reporte.pdfsBorrados.push(rutaPdf);
+  };
+
   for (const a of actasRevertidas) {
-    if (a.archivo) borrarSiExiste(path.join(carpetaActas, a.archivo));
+    if (a.archivo) { borrarSiExiste(path.join(carpetaActas, a.archivo)); borrarPdfSiExiste(a.pdf); }
     // actas viejas (de antes de que se guardara el nombre del archivo): se
     // buscan por el numero de acta en el nombre, como respaldo.
     else if (fs.existsSync(carpetaActas)) {
       for (const f of fs.readdirSync(carpetaActas))
-        if (f.includes(`_${a.numero}_`)) borrarSiExiste(path.join(carpetaActas, f));
+        if (f.includes(`_${a.numero}_`)) { borrarSiExiste(path.join(carpetaActas, f)); borrarPdfSiExiste(pdfSiExiste(path.join(carpetaActas, f))); }
     }
   }
-  if (entregaRevertida) borrarSiExiste(path.join(carpetaFicha, entregaRevertida.archivo));
+  if (entregaRevertida) { borrarSiExiste(path.join(carpetaFicha, entregaRevertida.archivo)); borrarPdfSiExiste(entregaRevertida.pdf); }
 
   // Solo las que sí tienen ruta: las que no, ya quedaron avisadas arriba
   // y no hay nada que intentar borrar aquí.
-  for (const e of equipoEjecutorRevertido) if (e.ruta) borrarSiExiste(e.ruta);
+  for (const e of equipoEjecutorRevertido) { if (e.ruta) borrarSiExiste(e.ruta); borrarPdfSiExiste(e.pdf); }
 
   const numerosARevertir = [
     ...actasRevertidas.map(a => a.numero),

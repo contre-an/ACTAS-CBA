@@ -273,10 +273,11 @@ pendiente 7).
   Deshace actas de aprendiz individuales, el acta de entrega (`reg.entregas`)
   y las actas de equipo ejecutor (`reg.equipoEjecutor`) de la fecha
   revertida — borra el `.docx` cuando conoce su ruta, avisa sin fallar
-  cuando no la conoce (actas de antes de que se empezara a guardar), y dejar
+  cuando no la conoce (actas de antes de que se empezara a guardar), y deja
   otras fechas de `reg.equipoEjecutor` intactas. Pendiente 5 cerrado (los 3
-  pasos hechos). Queda abierto el pendiente 8: el `.pdf` convertido de una
-  acta no se borra junto con su `.docx` al revertir.
+  pasos hechos). También borra el `.pdf` hermano de cada `.docx` que
+  revierte, si existe; a diferencia del `.docx`, un `.pdf` bloqueado avisa
+  en vez de abortar la reversión (pendiente 8, cerrado).
 
 ## Flujo "Inicializar trimestre" (conecta la plantilla maestra + sofia.js)
 
@@ -410,16 +411,47 @@ aprobación. Estado actual por función:
    `estado.js`); se quitó ese campo muerto. El único registro real,
    siempre, fue `reg.equipoEjecutor[ficha]` en `registro.json` — no hay
    duplicación ni conflicto que resolver.
-8. **`revertirFecha` borra el `.docx` pero no el `.pdf` convertido** —
-   anotado por el instructor, sin implementar todavía. Si un acta ya se
-   convirtió a PDF (`convertir_pdf.js`) y luego se revierte esa fecha,
-   `borrarSiExiste` borra el `.docx` pero el `.pdf` hermano queda huérfano
-   en la carpeta. El PDF es el documento que circula firmado, así que
-   dejarlo huérfano con un número de acta que el consecutivo ya volvió a
-   dejar libre para reutilizar es el mismo problema de fondo que
-   `recalcularConsecutivo` resuelve para el registro (pendiente 5, paso 1):
-   un número que sigue "vivo" en un documento real, sin que el sistema lo
-   sepa. Aplica al acta de equipo ejecutor y probablemente también a los
-   llamados/entrega — cualquier acta que se haya convertido a PDF antes de
-   revertirla. No tocar hasta decidir el diseño (¿`revertirFecha` borra el
-   `.pdf` si existe? ¿solo avisa, como con el `.docx` sin ruta?).
+8. ~~**`revertirFecha` borra el `.docx` pero no el `.pdf` convertido**~~ —
+   **resuelto**. `revertirFecha` calcula la ruta del `.pdf` hermano de
+   cada `.docx` que revierte (mismo nombre, `.docx`→`.pdf`, ya que no hay
+   ningún dato guardado sobre conversión — el único rastro es el archivo)
+   y lo borra junto con él. A diferencia del `.docx`, si el `.pdf` no se
+   puede borrar (abierto en Adobe/Edge u otro visor) NO aborta la
+   reversión: el `.docx` sí quedó revertido y el registro sí debe quedar
+   actualizado. Se avisa en `reporte.avisos` con la ruta completa,
+   explicando que corresponde a una acta revertida y que hay que cerrarlo
+   y borrarlo a mano antes de poder convertir la nueva versión con el
+   mismo número. Aplica a los tres tipos de acta (llamados, entrega,
+   equipo ejecutor) por el mismo mecanismo — aunque, ver pendiente 9, hoy
+   en la práctica solo entrega y equipo ejecutor llegan a tener un `.pdf`
+   real generado por la app. Probado con un bloqueo simulado (una carpeta
+   con el nombre exacto del archivo, para que `unlinkSync` falle de forma
+   determinista y repetible, sin depender de Word/Adobe reales): un
+   `.docx` bloqueado sigue abortando la reversión igual que antes; un
+   `.pdf` bloqueado avisa y dejar completarse el resto.
+
+   Dos observaciones anotadas al implementar esto, sin resolver:
+   a) En la rama de actas sin campo `archivo` (legacy, buscadas por número
+      en el nombre), el `.pdf` se detecta al ejecutar, no en la
+      simulación — la vista previa no lo anuncia en ese caso aunque
+      después sí lo borre.
+   b) Si un `.docx` bloqueado lanza, los archivos y PDFs que ya se
+      alcanzaron a borrar antes del bloqueo quedan borrados, pero el
+      registro no se guarda (para no afirmar una reversión incompleta):
+      el registro sigue listando documentos que ya no están en disco. Es
+      un problema del diseño original (ya existía antes de este cambio),
+      pero borrar también PDFs aumenta lo que se puede perder en ese
+      escenario. Evaluar si conviene borrar todo primero y decidir el
+      `throw` al final, en vez de ir borrando y lanzando a mitad de camino.
+9. **"Convertir a PDF" no llega a los llamados de atención** — anotado,
+   sin implementar. `convertirPdf` (`convertir_pdf.js`) lee la carpeta que
+   se le pasa con `fs.readdirSync` **no recursivo**; el botón la llama con
+   la carpeta raíz de la ficha (`[...seleccionadas]`), donde SÍ están el
+   `.docx` de entrega y el de equipo ejecutor, pero los llamados/plan/
+   comité viven en la subcarpeta `LLAMADOS DE ATENCION/`, que nunca se
+   pasa. El panel de "Estado de la ficha" sí calcula y muestra "sin PDF"
+   para esos llamados (`resultado.actasSinPdf` en `ipc.js`, mirando esa
+   subcarpeta), pero no existe ninguna acción en la app que realmente los
+   convierta — el indicador y el botón están desconectados. No tocar
+   hasta decidir el diseño (¿el botón recorre también esa subcarpeta?
+   ¿se ofrece por separado?).

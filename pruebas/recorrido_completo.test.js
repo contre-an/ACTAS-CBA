@@ -303,13 +303,18 @@ test("recorrido completo, ficha ficticia 9000001", async t => {
 
     const previa = revertirFecha(CARPETA, hoyISO); // simular=true por defecto
     assert.equal(previa.actasRevertidas.length, 4, "las 4 actas de Juan Carlos, generadas hoy");
+    assert.ok(previa.actasRevertidas.every(a => a.pdf === null), "los llamados nunca se convirtieron a PDF");
     assert.equal(previa.equipoEjecutorRevertido.length, 1, "el acta de equipo ejecutor del paso 7, generada hoy");
     assert.equal(previa.equipoEjecutorRevertido[0].ruta, rutaActaEquipoEjecutor);
+    const rutaPdfEquipoEjecutor = rutaActaEquipoEjecutor.replace(/\.docx$/, ".pdf");
+    assert.equal(previa.equipoEjecutorRevertido[0].pdf, rutaPdfEquipoEjecutor, "se convirtió a PDF en el paso 8: la vista previa debe decirlo (pendiente 8)");
     assert.equal(previa.avisos.length, 0, "esta acta sí tiene ruta guardada (paso 2): no hace falta avisar nada");
 
     const resultado = revertirFecha(CARPETA, hoyISO, { simular: false });
     assert.equal(resultado.archivosBorrados.length, 5, "las 4 actas de Juan Carlos + el acta de equipo ejecutor");
     assert.ok(!fs.existsSync(rutaActaEquipoEjecutor), "el .docx de equipo ejecutor también se borra (paso 3 del pendiente)");
+    assert.ok(!fs.existsSync(rutaPdfEquipoEjecutor), "el PDF ya convertido también se borra (pendiente 8)");
+    assert.deepEqual(resultado.pdfsBorrados, [rutaPdfEquipoEjecutor]);
 
     const regDespues = leerRegistro();
     assert.equal(regDespues.aprendices[`${FICHA}-100000001`], undefined, "el aprendiz vuelve a quedar limpio");
@@ -393,5 +398,53 @@ test("recorrido completo, ficha ficticia 9000001", async t => {
     assert.ok(Array.isArray(regDespues.equipoEjecutor[String(FICHA)]), "la clave de la ficha NO se elimina: le queda la otra entrada");
     assert.equal(regDespues.equipoEjecutor[String(FICHA)].length, 1);
     assert.equal(regDespues.equipoEjecutor[String(FICHA)][0].numero, "951210-00-202", "la entrada de la otra fecha sobrevive intacta");
+  });
+
+  await t.test("13. un .docx bloqueado sigue abortando la reversión (sin cambios)", () => {
+    // Simula un bloqueo real sin depender de Word/el sistema operativo:
+    // una carpeta con el nombre exacto del .docx hace que unlinkSync
+    // falle de forma determinista y repetible, igual que un archivo
+    // abierto lo haría.
+    const hoyISO = hoyISOLocal();
+    const { ddmmaaaa } = normalizarFecha(hoyISO);
+    const rutaBloqueada = path.join(CARPETA, "ACTA_951210-00-301_EQUIPO_EJECUTOR_FICHA_DUMMY_BLOQUEADA.docx");
+    fs.mkdirSync(rutaBloqueada);
+
+    const reg = leerRegistro();
+    reg.equipoEjecutor = { [String(FICHA)]: [{ numero: "951210-00-301", fecha: ddmmaaaa, ruta: rutaBloqueada }] };
+    fs.writeFileSync(process.env.ACTAS_REGISTRO_RUTA, JSON.stringify(reg, null, 2));
+
+    assert.throws(() => revertirFecha(CARPETA, hoyISO, { simular: false }), /No se pudo confirmar el borrado/);
+
+    const regDespues = leerRegistro();
+    assert.ok(regDespues.equipoEjecutor[String(FICHA)]?.some(e => e.numero === "951210-00-301"), "el registro NO se modifica si el .docx no se pudo borrar");
+
+    fs.rmSync(rutaBloqueada, { recursive: true, force: true });
+  });
+
+  await t.test("14. un .pdf bloqueado avisa pero NO aborta la reversión", () => {
+    const hoyISO = hoyISOLocal();
+    const { ddmmaaaa } = normalizarFecha(hoyISO);
+    const rutaDocx = path.join(CARPETA, "ACTA_951210-00-302_EQUIPO_EJECUTOR_FICHA_DUMMY_PDF.docx");
+    const rutaPdfBloqueado = rutaDocx.replace(/\.docx$/, ".pdf");
+    fs.writeFileSync(rutaDocx, "dummy");
+    fs.mkdirSync(rutaPdfBloqueado); // mismo truco: fuerza que falle el borrado
+
+    const reg = leerRegistro();
+    reg.equipoEjecutor = { [String(FICHA)]: [{ numero: "951210-00-302", fecha: ddmmaaaa, ruta: rutaDocx }] };
+    fs.writeFileSync(process.env.ACTAS_REGISTRO_RUTA, JSON.stringify(reg, null, 2));
+
+    const resultado = revertirFecha(CARPETA, hoyISO, { simular: false }); // no debe lanzar
+    assert.ok(!fs.existsSync(rutaDocx), "el .docx sí se borra normalmente");
+    assert.ok(fs.existsSync(rutaPdfBloqueado), "el PDF bloqueado sigue ahí");
+    assert.equal(resultado.pdfsBorrados.length, 0);
+    assert.equal(resultado.avisos.length, 1);
+    assert.match(resultado.avisos[0], /no se pudo borrar/);
+    assert.match(resultado.avisos[0], new RegExp(rutaPdfBloqueado.replace(/[/\\.]/g, "\\$&")));
+
+    const regDespues = leerRegistro();
+    assert.equal(regDespues.equipoEjecutor[String(FICHA)], undefined, "la reversión sí se completa: la entrada se quita del registro");
+
+    fs.rmSync(rutaPdfBloqueado, { recursive: true, force: true });
   });
 });
