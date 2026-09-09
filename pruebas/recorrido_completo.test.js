@@ -323,27 +323,47 @@ test("recorrido completo, ficha ficticia 9000001", async t => {
     assert.equal(path.join(path.dirname(CARPETA), entrada.ruta), rutaActaEquipoEjecutor, "debe resolver de vuelta al mismo archivo");
   });
 
-  await t.test("8. convertir a PDF sin modificar los .docx", { skip: !wordInstalado() && "Word no está instalado en este equipo" }, () => {
-    // Se convierte AQUÍ, antes de revertir: el paso 9 va a borrar este
-    // mismo .docx (revierte "hoy", y esta acta es de hoy), así que probar
-    // la conversión tiene que pasar mientras el archivo todavía existe.
+  await t.test("8. convertir a PDF: alcanza también LLAMADOS DE ATENCION/ (pendiente 9, cerrado)", { skip: !wordInstalado() && "Word no está instalado en este equipo" }, () => {
+    // Se convierte AQUÍ, antes de revertir: el paso 9 va a borrar todo esto
+    // (revierte "hoy", y todo lo generado hasta acá es de hoy), así que
+    // probar la conversión tiene que pasar mientras los archivos todavía existen.
+    const archivosLlamados = leerRegistro().aprendices[`${FICHA}-100000001`].historial.map(h => h.archivo);
+    assert.equal(archivosLlamados.length, 4, "los 4 llamados/plan/comité de Juan Carlos, en LLAMADOS DE ATENCION/");
+
     const antes = fs.readFileSync(rutaActaEquipoEjecutor);
     const resultado = convertirPdf(CARPETA, { simular: false });
-    assert.ok(resultado.convertidos.includes(path.basename(rutaActaEquipoEjecutor)));
+    assert.ok(resultado.convertidos.includes(path.basename(rutaActaEquipoEjecutor)), "el acta de equipo ejecutor (raíz de la ficha)");
+    for (const archivo of archivosLlamados)
+      assert.ok(resultado.convertidos.includes(archivo), `${archivo} (LLAMADOS DE ATENCION/) — antes convertirPdf no llegaba ahí`);
     assert.equal(resultado.errores.length, 0);
+    assert.equal(resultado.convertidos.length, 5, "4 llamados + el acta de equipo ejecutor");
 
     const despues = fs.readFileSync(rutaActaEquipoEjecutor);
     assert.ok(antes.equals(despues), "el .docx no debe modificarse al convertir (se abre en solo lectura)");
     assert.ok(fs.existsSync(rutaActaEquipoEjecutor.replace(/\.docx$/, ".pdf")));
+
+    // En positivo, no solo por el listado de "convertidos": cada .docx de
+    // LLAMADOS DE ATENCION/ tiene de verdad su .pdf al lado en disco.
+    for (const archivo of archivosLlamados) {
+      const rutaPdf = path.join(CARPETA_ACTAS, archivo.replace(/\.docx$/i, ".pdf"));
+      assert.ok(fs.existsSync(rutaPdf), `${rutaPdf} debe existir`);
+    }
   });
 
   await t.test("9. revertir todo lo de esa fecha: registro y consecutivo como antes", () => {
     const hoyISO = hoyISOLocal();
     const antes = leerRegistro();
 
+    const archivosLlamados = antes.aprendices[`${FICHA}-100000001`].historial.map(h => h.archivo);
+    const pdfsLlamadosEsperados = archivosLlamados.map(a => path.join(CARPETA_ACTAS, a.replace(/\.docx$/i, ".pdf")));
+
     const previa = revertirFecha(CARPETA, hoyISO); // simular=true por defecto
     assert.equal(previa.actasRevertidas.length, 4, "las 4 actas de Juan Carlos, generadas hoy");
-    assert.ok(previa.actasRevertidas.every(a => a.pdf === null), "los llamados nunca se convirtieron a PDF");
+    // Antes del pendiente 9, esto daba null: convertirPdf nunca llegaba a
+    // LLAMADOS DE ATENCION/. Ahora sí se convirtieron (paso 8), así que la
+    // vista previa de revertir debe traer la ruta de cada PDF.
+    for (const a of previa.actasRevertidas)
+      assert.ok(a.pdf && pdfsLlamadosEsperados.includes(a.pdf), `${a.archivo} debe traer su PDF ya convertido (pendiente 9, cerrado)`);
     assert.equal(previa.equipoEjecutorRevertido.length, 1, "el acta de equipo ejecutor del paso 7, generada hoy");
     assert.equal(previa.equipoEjecutorRevertido[0].ruta, rutaActaEquipoEjecutor);
     const rutaPdfEquipoEjecutor = rutaActaEquipoEjecutor.replace(/\.docx$/, ".pdf");
@@ -354,7 +374,10 @@ test("recorrido completo, ficha ficticia 9000001", async t => {
     assert.equal(resultado.archivosBorrados.length, 5, "las 4 actas de Juan Carlos + el acta de equipo ejecutor");
     assert.ok(!fs.existsSync(rutaActaEquipoEjecutor), "el .docx de equipo ejecutor también se borra (paso 3 del pendiente)");
     assert.ok(!fs.existsSync(rutaPdfEquipoEjecutor), "el PDF ya convertido también se borra (pendiente 8)");
-    assert.deepEqual(resultado.pdfsBorrados, [rutaPdfEquipoEjecutor]);
+    for (const rutaPdf of pdfsLlamadosEsperados)
+      assert.ok(!fs.existsSync(rutaPdf), `${rutaPdf} (de un llamado) también debe borrarse`);
+    assert.deepEqual([...resultado.pdfsBorrados].sort(), [...pdfsLlamadosEsperados, rutaPdfEquipoEjecutor].sort(),
+      "los 4 PDFs de los llamados (pendiente 9) + el de equipo ejecutor (pendiente 8), todos borrados");
 
     const regDespues = leerRegistro();
     assert.equal(regDespues.aprendices[`${FICHA}-100000001`], undefined, "el aprendiz vuelve a quedar limpio");

@@ -501,15 +501,48 @@ aprobación. Estado actual por función:
       pero borrar también PDFs aumenta lo que se puede perder en ese
       escenario. Evaluar si conviene borrar todo primero y decidir el
       `throw` al final, en vez de ir borrando y lanzando a mitad de camino.
-9. **"Convertir a PDF" no llega a los llamados de atención** — anotado,
-   sin implementar. `convertirPdf` (`convertir_pdf.js`) lee la carpeta que
-   se le pasa con `fs.readdirSync` **no recursivo**; el botón la llama con
-   la carpeta raíz de la ficha (`[...seleccionadas]`), donde SÍ están el
+9. ~~**"Convertir a PDF" no llega a los llamados de atención**~~ —
+   **resuelto**. Causa raíz confirmada: `buscarPendientes` (`convertir_pdf.js`)
+   leía con `fs.readdirSync` **no recursivo** solo la carpeta que le pasa
+   el botón (la raíz de la ficha, `[...seleccionadas]`) — ahí SÍ están el
    `.docx` de entrega y el de equipo ejecutor, pero los llamados/plan/
-   comité viven en la subcarpeta `LLAMADOS DE ATENCION/`, que nunca se
-   pasa. El panel de "Estado de la ficha" sí calcula y muestra "sin PDF"
-   para esos llamados (`resultado.actasSinPdf` en `ipc.js`, mirando esa
-   subcarpeta), pero no existe ninguna acción en la app que realmente los
-   convierta — el indicador y el botón están desconectados. No tocar
-   hasta decidir el diseño (¿el botón recorre también esa subcarpeta?
-   ¿se ofrece por separado?).
+   comité viven en `LLAMADOS DE ATENCION/`, que nunca se miraba. Ahora
+   `buscarPendientes` recorre las dos carpetas conocidas (`buscarPendientesEn`,
+   una función chica reutilizada dos veces — sigue sin ser recursiva de
+   verdad, solo mira los dos niveles que existen en la estructura de una
+   ficha). El indicador (`resultado.actasSinPdf` en `ipc.js`, que ya
+   miraba esa subcarpeta) y la acción ahora coinciden sin que hiciera
+   falta tocar `ipc.js`: los dos comparan lo mismo ("¿existe el `.pdf`
+   hermano en disco ahora mismo?"), solo que antes la acción nunca
+   llegaba a escribirlo ahí.
+   - La vista previa distingue el origen de cada archivo (`pendientes`
+     pasa de una lista de nombres a `{archivo, origen}`, con
+     `origen: "raíz de la ficha" | "LLAMADOS DE ATENCION"`), agrupado en
+     dos sub-listas en la interfaz — no una lista plana sin contexto.
+   - Antes de aprobar, un aviso nuevo dice cuántos archivos se van a
+     convertir y que la aplicación va a quedar sin responder mientras
+     Word trabaja (el handler sigue siendo síncrono a propósito — el
+     volumen real es ~10 archivos, una vez al mes; no se justificaba
+     volverlo asíncrono). El aviso muestra el número ANTES de aprobar,
+     no algo que el instructor descubra a mitad de camino.
+   - El handler de `pdf:convertir` (`ipc.js`) sigue siendo síncrono
+     (`execFileSync`, bloqueando el proceso principal de Electron entero
+     mientras corre) — no se tocó, es exactamente lo que el volumen real
+     no justifica cambiar.
+   - Probado en positivo, no solo corrigiendo las aserciones viejas que
+     daban por sentado el bug: `pruebas/recorrido_completo.test.js` paso
+     8 confirma que los 4 `.docx` de `LLAMADOS DE ATENCION/` (llamado 1,
+     llamado 2, plan de mejoramiento, informe a comité) tienen su `.pdf`
+     al lado después de convertir; paso 9 confirma que `revertirFecha`
+     encuentra esos PDFs en la vista previa (antes daban `null`) y los
+     borra junto con los `.docx` al revertir.
+
+10. **Panel "Ver estado" no se refresca solo tras convertir a PDF** —
+    anotado, sin implementar. Si el panel de una ficha está abierto
+    mostrando "sin PDF" en un llamado, y se convierte esa ficha desde el
+    botón "Convertir a PDF", el panel no se actualiza solo — hay que
+    cerrarlo y volver a abrirlo (`mostrarEstadoFicha`, `app.js`) para ver
+    que ya no dice "sin PDF". El dato de fondo ya es correcto en cuanto
+    termina la conversión (ver pendiente 9: es un chequeo en vivo contra
+    disco, no un flag desactualizado); esto es solo que la vista abierta
+    no se entera sin que alguien la vuelva a pedir.

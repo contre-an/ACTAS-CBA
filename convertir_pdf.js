@@ -10,6 +10,10 @@
 //
 // Reglas, tal como las entrega el instructor:
 // - Solo se convierten los .docx que aún NO tienen su .pdf al lado.
+// - Busca en la raíz de la ficha Y en LLAMADOS DE ATENCION/ (ver
+//   buscarPendientes) — antes solo miraba la raíz, y los llamados/plan/
+//   comité (que viven en esa subcarpeta) nunca se convertían aunque el
+//   panel "Ver estado" los mostrara como "sin PDF" (pendiente 9, cerrado).
 // - Se ignoran los temporales de Word que empiezan con "~$".
 // - Documents.Open(ruta, false, true): el tercer parámetro abre en SOLO
 //   LECTURA — el .docx original nunca se modifica.
@@ -34,11 +38,22 @@ function wordEstaAbierto() {
   catch { return false; }
 }
 
-function buscarPendientes(carpeta) {
+// Un solo nivel, no recursiva de verdad: mira exactamente las dos
+// carpetas conocidas de la estructura de una ficha (su raíz, donde viven
+// el acta de entrega y la de equipo ejecutor, y LLAMADOS DE ATENCION/,
+// donde viven los llamados/plan/comité — ver ARQUITECTURA.md, pendiente
+// 9, cerrado). Si la subcarpeta no existe todavía (ficha sin ningún
+// llamado generado), simplemente no aporta nada, no es un error.
+function buscarPendientesEn(carpeta) {
+  if (!fs.existsSync(carpeta)) return [];
   return fs.readdirSync(carpeta)
     .filter(f => /\.docx$/i.test(f) && !f.startsWith("~$"))
     .filter(f => !fs.existsSync(path.join(carpeta, f.replace(/\.docx$/i, ".pdf"))))
     .map(f => path.join(carpeta, f));
+}
+
+function buscarPendientes(carpetaFicha) {
+  return [...buscarPendientesEn(carpetaFicha), ...buscarPendientesEn(path.join(carpetaFicha, "LLAMADOS DE ATENCION"))];
 }
 
 function generarScript(rutas) {
@@ -60,7 +75,8 @@ $word.Quit()
 }
 
 /**
- * @param {string} carpeta carpeta con los .docx firmados a convertir (no recursivo)
+ * @param {string} carpeta carpeta de la ficha (busca en su raíz y en su
+ *   subcarpeta LLAMADOS DE ATENCION/, ver buscarPendientes)
  * @param {{simular?: boolean}} [flags] simular=true por defecto: solo dice
  *   cuáles se convertirían, no ejecuta nada (ninguna acción que genere
  *   documentos se ejecuta sin aprobación).
@@ -76,7 +92,17 @@ function convertirPdf(carpeta, { simular = true } = {}) {
   const pendientes = buscarPendientes(carpeta);
 
   if (simular)
-    return { carpeta, pendientes: pendientes.map(p => path.basename(p)), total: pendientes.length, avisos };
+    return {
+      carpeta,
+      // origen, no solo el nombre: la vista previa tiene que distinguir
+      // de qué carpeta viene cada archivo (raíz de la ficha, o LLAMADOS
+      // DE ATENCION/) para que el instructor sepa qué va a convertir.
+      pendientes: pendientes.map(p => ({
+        archivo: path.basename(p),
+        origen: path.dirname(p) === carpeta ? "raíz de la ficha" : "LLAMADOS DE ATENCION",
+      })),
+      total: pendientes.length, avisos,
+    };
 
   if (!pendientes.length) return { carpeta, convertidos: [], errores: [], total: 0, avisos };
 

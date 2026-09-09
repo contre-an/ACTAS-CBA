@@ -231,11 +231,33 @@ el("btn-generar-entrega").addEventListener("click", () => ejecutarConVistaPrevia
 el("btn-convertir-pdf").addEventListener("click", () => ejecutarConVistaPrevia({
   titulo: "Convertir a PDF",
   obtenerResultado: simular => window.actas.convertirPdf([...seleccionadas], { simular }),
-  renderizar: lista => renderizarPorFicha(lista, item => {
-    const r = item.resultado;
-    if (r.pendientes) return r.pendientes.length ? `<ul>${r.pendientes.map(p => `<li>${escapeHtml(p)}</li>`).join("")}</ul>` : "<p><em>No hay .docx pendientes de convertir.</em></p>";
-    return `<p class="exito-texto">${r.convertidos.length} convertido(s).</p>${r.errores.length ? `<p class="error-texto">${r.errores.map(escapeHtml).join("<br>")}</p>` : ""}${r.avisos?.length ? r.avisos.map(a => `<p class="aviso">${escapeHtml(a)}</p>`).join("") : ""}`;
-  }),
+  renderizar: lista => {
+    // Solo la vista previa trae .pendientes (el resultado real trae
+    // .convertidos/.errores) — así el aviso de "va a quedar sin
+    // responder" aparece únicamente ANTES de aprobar, no después.
+    const totalPendientes = lista.reduce((acc, item) => acc + (item.resultado?.pendientes?.length ?? 0), 0);
+    const avisoGlobal = totalPendientes > 0
+      ? `<p class="aviso">⚠ Se va${totalPendientes === 1 ? "" : "n"} a convertir ${totalPendientes} archivo${totalPendientes === 1 ? "" : "s"}. Mientras Word esté trabajando, la aplicación va a quedar SIN RESPONDER — no la cierres. Puede tardar varios segundos.</p>`
+      : "";
+    return avisoGlobal + renderizarPorFicha(lista, item => {
+      const r = item.resultado;
+      if (r.pendientes) {
+        if (!r.pendientes.length) return "<p><em>No hay .docx pendientes de convertir.</em></p>";
+        // Agrupado por origen (raíz de la ficha / LLAMADOS DE ATENCION),
+        // no una lista plana: así el instructor sabe qué va a convertir,
+        // no solo cuántos.
+        const porOrigen = new Map();
+        for (const p of r.pendientes) {
+          if (!porOrigen.has(p.origen)) porOrigen.set(p.origen, []);
+          porOrigen.get(p.origen).push(p.archivo);
+        }
+        return [...porOrigen].map(([origen, archivos]) =>
+          `<p><strong>${escapeHtml(origen)}</strong> (${archivos.length}):</p><ul>${archivos.map(a => `<li>${escapeHtml(a)}</li>`).join("")}</ul>`
+        ).join("");
+      }
+      return `<p class="exito-texto">${r.convertidos.length} convertido(s).</p>${r.errores.length ? `<p class="error-texto">${r.errores.map(escapeHtml).join("<br>")}</p>` : ""}${r.avisos?.length ? r.avisos.map(a => `<p class="aviso">${escapeHtml(a)}</p>`).join("") : ""}`;
+    });
+  },
 }));
 
 // ===== Acta de equipo ejecutor =====
