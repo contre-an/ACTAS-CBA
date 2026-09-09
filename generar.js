@@ -7,13 +7,7 @@ const Docxtemplater = require("docxtemplater");
 const PLANTILLA = path.join(__dirname, "plantilla", "GOR-F-084_PLANTILLA.docx");
 const PLANTILLA_COMITE = path.join(__dirname, "plantilla", "INFORME_COMITE_PLANTILLA.docx");
 const PLANTILLA_ENTREGA = path.join(__dirname, "plantilla", "ACTA_ENTREGA_PLANTILLA.docx");
-// Función, no const: así una prueba automatizada puede fijar
-// ACTAS_REGISTRO_RUTA antes de llamar a cualquier función de este módulo y
-// quedar aislada del registro.json real del proyecto, sin tener que
-// recargar el módulo. En uso normal (sin la variable), es la de siempre.
-const rutaRegistro = () => process.env.ACTAS_REGISTRO_RUTA
-  ? path.resolve(process.env.ACTAS_REGISTRO_RUTA)
-  : path.join(__dirname, "registro.json");
+const { resolverRutaRegistro } = require("./rutaRegistro");
 const MESES = ["enero","febrero","marzo","abril","mayo","junio","julio","agosto","septiembre","octubre","noviembre","diciembre"];
 
 // ===== Numeración compuesta de actas: 951210-XX-NNN =====
@@ -40,10 +34,10 @@ function fechaCorta(d = new Date()) {
 }
 
 function cargarRegistro() {
-  try { return JSON.parse(fs.readFileSync(rutaRegistro(), "utf8")); }
+  try { return JSON.parse(fs.readFileSync(resolverRutaRegistro(), "utf8")); }
   catch { return { consecutivo: 0, aprendices: {} }; }
 }
-function guardarRegistro(reg) { fs.writeFileSync(rutaRegistro(), JSON.stringify(reg, null, 2)); }
+function guardarRegistro(reg) { fs.writeFileSync(resolverRutaRegistro(), JSON.stringify(reg, null, 2)); }
 
 // ---- texto de cada incidente con su norma (Acuerdo 009 de 2024) ----
 function textoIncidente(inc, n) {

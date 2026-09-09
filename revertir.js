@@ -11,6 +11,7 @@ const path = require("path");
 const PizZip = require("pizzip");
 const { cargarRegistro, guardarRegistro } = require("./generar");
 const { leerControl } = require("./procesar");
+const { resolverRutaRegistro } = require("./rutaRegistro");
 
 function xmlEscape(s) {
   return String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
@@ -224,9 +225,7 @@ function revertirFecha(carpetaFicha, fecha, { simular = true } = {}) {
   // Orden a propósito: TODO lo que se va a tocar se respalda ANTES de tocar
   // nada (ni un archivo borrado, ni una fila de HISTORICO editada, ni el
   // registro sobrescrito) — no solo justo antes de escribir cada uno.
-  const REGISTRO = process.env.ACTAS_REGISTRO_RUTA
-    ? path.resolve(process.env.ACTAS_REGISTRO_RUTA)
-    : path.join(__dirname, "registro.json");
+  const REGISTRO = resolverRutaRegistro();
   if (fs.existsSync(REGISTRO)) {
     const respaldoRegistro = `${REGISTRO}.respaldo_${timestamp()}`;
     fs.copyFileSync(REGISTRO, respaldoRegistro);

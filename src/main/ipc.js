@@ -24,6 +24,7 @@ const { convertirPdf, wordInstalado } = requerir("convertir_pdf");
 const { estadoNuevo, guardarEstado, cargarEstado } = requerir("estado");
 const { cargarConfiguracion, guardarConfiguracion } = require("./configuracion");
 const modoPrueba = require("./modoPrueba");
+const { resolverRutaRegistro, obtenerAvisoRegistro } = requerir("rutaRegistro");
 
 const RUTA_PLANTILLA_MAESTRA = path.join(RAIZ, "PLANTILLA_MAESTRA_CONTROL_ASISTENCIA V3.xlsx");
 
@@ -45,6 +46,47 @@ function aplicarVariablesDeEntorno() {
 
   if (config.modoPrueba) process.env.ACTAS_REGISTRO_RUTA = modoPrueba.rutaRegistroPruebas();
   else delete process.env.ACTAS_REGISTRO_RUTA;
+
+  avisarSobreRegistroSiHaceFalta();
+}
+
+// Diálogo nativo, una sola vez por sesión de la app: rutaRegistro.js resuelve
+// (y, la primera vez, migra) registro.json de forma perezosa — recién en el
+// primer llamado sin ACTAS_REGISTRO_RUTA (es decir, con el modo prueba
+// apagado). Acá se fuerza esa resolución y, si hay algo que avisar
+// (duplicado sin resolver, o migración que no se pudo confirmar), se
+// muestra un diálogo modal en vez de dejarlo enterrado en un log.
+let avisoRegistroMostrado = false;
+function avisarSobreRegistroSiHaceFalta() {
+  if (process.env.ACTAS_REGISTRO_RUTA || avisoRegistroMostrado) return;
+  resolverRutaRegistro();
+  const aviso = obtenerAvisoRegistro();
+  if (!aviso) return;
+  avisoRegistroMostrado = true;
+
+  if (aviso.tipo === "duplicado") {
+    dialog.showMessageBox({
+      type: "warning",
+      title: "Dos registros de actas encontrados",
+      message: "Hay dos registros de actas en este computador.",
+      detail: `En uso ahora: ${aviso.rutaUsada}\n` +
+        `Sin usar, no se tocó: ${aviso.rutaSinUsar}\n\n` +
+        `Antes de decidir cuál es el correcto, compará cuál tiene más actas ` +
+        `(el número de "consecutivo" o cuántas fichas hay en "aprendices" de cada archivo). ` +
+        `Si el que está en uso no es el correcto, reemplazalo a mano por el otro.`,
+    });
+  } else if (aviso.tipo === "fallo_migracion") {
+    dialog.showMessageBox({
+      type: "error",
+      title: "No se pudo migrar el registro de actas",
+      message: "No se pudo copiar registro.json a la nueva ubicación.",
+      detail: `Se sigue usando el de la carpeta de la app para no arriesgar el consecutivo.\n\n` +
+        `Origen: ${aviso.rutaVieja}\n` +
+        `Destino que falló: ${aviso.rutaNuevaFallida}\n` +
+        `Motivo: ${aviso.motivo}\n\n` +
+        `Revisá permisos de escritura en esa carpeta, o copialo a mano.`,
+    });
+  }
 }
 
 // La carpeta del trimestre "de verdad" según el modo actual: la ficticia de
