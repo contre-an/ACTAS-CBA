@@ -11,8 +11,9 @@ const { _resolver } = require("../rutaRegistro");
 const USERDATA = path.join("C:", "userdata-ficticio");
 const LEGADO = path.join("C:", "app-ficticia", "registro.json");
 const NUEVA = path.join(USERDATA, "registro.json");
+const MARCA = path.join(USERDATA, "migracion_registro.json");
 
-// Doble en memoria de fs.existsSync/copyFileSync/mkdirSync/readFileSync,
+// Doble en memoria de fs.existsSync/copyFileSync/mkdirSync/readFileSync/writeFileSync,
 // para cada escenario: un Set de rutas "existentes" y un Map ruta->contenido.
 function fsFalso({ archivos = {} } = {}) {
   const contenido = new Map(Object.entries(archivos));
@@ -30,6 +31,7 @@ function fsFalso({ archivos = {} } = {}) {
       contenido.set(destino, contenido.get(origen));
     },
     crearCarpeta: p => carpetasCreadas.push(p),
+    escribirSync: (p, c) => contenido.set(p, c),
     _contenido: contenido, _carpetasCreadas: carpetasCreadas, _copias: copias,
   };
 }
@@ -58,7 +60,7 @@ test("resolución de registro.json", async t => {
     assert.equal(F._copias.length, 0);
   });
 
-  await t.test("solo existe el legado: migra a userData y verifica la copia antes de usarla", () => {
+  await t.test("solo existe el legado: migra a userData, verifica la copia, y deja la marca de migración", () => {
     const contenidoOriginal = '{"consecutivo":7,"aprendices":{"9000001-1":{}}}';
     const F = fsFalso({ archivos: { [LEGADO]: contenidoOriginal } });
     const r = _resolver({ envRuta: null, userData: USERDATA, legado: LEGADO, ...F });
@@ -68,9 +70,10 @@ test("resolución de registro.json", async t => {
     assert.deepEqual(F._copias[0], { origen: LEGADO, destino: NUEVA });
     assert.equal(F._contenido.get(NUEVA), contenidoOriginal, "el legado NO se toca ni se borra");
     assert.equal(F._contenido.get(LEGADO), contenidoOriginal);
+    assert.equal(JSON.parse(F._contenido.get(MARCA)).legadoMigrado, LEGADO, "queda la marca de qué legado se migró");
   });
 
-  await t.test("ya existen los dos: usa el de userData, no copia nada, y avisa duplicado sin adivinar cuál es el bueno", () => {
+  await t.test("ya existen los dos, sin marca de migración previa: usa el de userData, no copia nada, y avisa duplicado sin adivinar cuál es el bueno", () => {
     const F = fsFalso({ archivos: {
       [LEGADO]: '{"consecutivo":5,"aprendices":{}}',
       [NUEVA]: '{"consecutivo":2,"aprendices":{}}',
@@ -79,6 +82,30 @@ test("resolución de registro.json", async t => {
     assert.equal(r.ruta, NUEVA, "se usa el de userData");
     assert.deepEqual(r.aviso, { tipo: "duplicado", rutaUsada: NUEVA, rutaSinUsar: LEGADO });
     assert.equal(F._copias.length, 0);
+  });
+
+  await t.test("el legado ya está marcado como migrado: no repite el aviso de duplicado", () => {
+    const F = fsFalso({ archivos: {
+      [LEGADO]: '{"consecutivo":5,"aprendices":{}}',
+      [NUEVA]: '{"consecutivo":5,"aprendices":{}}',
+      [MARCA]: JSON.stringify({ legadoMigrado: LEGADO, fecha: "2026-09-09T00:00:00.000Z" }),
+    } });
+    const r = _resolver({ envRuta: null, userData: USERDATA, legado: LEGADO, ...F });
+    assert.equal(r.ruta, NUEVA);
+    assert.equal(r.aviso, null, "el legado ya se conocía: no debe avisar de nuevo");
+    assert.equal(F._copias.length, 0, "no debe reintentar la migración");
+  });
+
+  await t.test("la marca es de un legado distinto: sí avisa, porque esto no se había visto antes", () => {
+    const legadoAnterior = path.join("D:", "instalacion-vieja", "registro.json");
+    const F = fsFalso({ archivos: {
+      [LEGADO]: '{"consecutivo":5,"aprendices":{}}',
+      [NUEVA]: '{"consecutivo":5,"aprendices":{}}',
+      [MARCA]: JSON.stringify({ legadoMigrado: legadoAnterior, fecha: "2026-01-01T00:00:00.000Z" }),
+    } });
+    const r = _resolver({ envRuta: null, userData: USERDATA, legado: LEGADO, ...F });
+    assert.equal(r.ruta, NUEVA);
+    assert.deepEqual(r.aviso, { tipo: "duplicado", rutaUsada: NUEVA, rutaSinUsar: LEGADO });
   });
 
   await t.test("la copia falla (excepción de fs.copyFileSync): NO usa userData, sigue con el legado y señala el fallo", () => {

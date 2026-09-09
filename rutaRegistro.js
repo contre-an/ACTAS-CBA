@@ -28,7 +28,14 @@
 //
 // Si YA existen los dos (legado y userData) al resolver, no se adivina cuál
 // es el correcto: se usa el de userData y se deja constancia para que
-// quien opera la app decida a mano (ver obtenerAvisoRegistro()).
+// quien opera la app decida a mano (ver obtenerAvisoRegistro()) — SALVO que
+// ese legado ya sea el que esta misma migración copió alguna vez: eso se
+// sabe por la marca (migracion_registro.json, en userData, nunca en el
+// legado — empaquetado, el legado queda dentro de app.asar, de solo
+// lectura). La marca guarda la ruta exacta del legado migrado; si en un
+// arranque futuro aparece un legado en OTRA ruta, sí se avisa: eso es algo
+// nuevo que esta instalación no había visto, no el resto ya conocido de la
+// migración de siempre.
 const fs = require("fs");
 const path = require("path");
 
@@ -46,29 +53,47 @@ function carpetaUserData() {
   return require("electron").app.getPath("userData");
 }
 
+function rutaMarcaMigracion(userData) {
+  return path.join(userData, "migracion_registro.json");
+}
+
 // Núcleo puro: nada de Electron ni de fs reales adentro, todo inyectado.
 // Así se puede probar la lógica de migración/duplicado/fallo con
 // node --test, sin depender de un userData real. Devuelve { ruta, aviso }.
 // aviso es null, o uno de:
 //   { tipo: "duplicado", rutaUsada, rutaSinUsar }
 //   { tipo: "fallo_migracion", rutaVieja, rutaNuevaFallida, motivo }
-function _resolver({ envRuta, userData, legado, existeSync, copiar, crearCarpeta, leerSync }) {
+function _resolver({ envRuta, userData, legado, existeSync, copiar, crearCarpeta, leerSync, escribirSync }) {
   if (envRuta) return { ruta: path.resolve(envRuta), aviso: null };
   if (!userData) return { ruta: legado, aviso: null };
 
   const rutaNueva = path.join(userData, "registro.json");
+  const rutaMarca = rutaMarcaMigracion(userData);
   const existeNueva = existeSync(rutaNueva);
   const existeVieja = existeSync(legado);
 
+  // ¿La marca dice que ESTE legado exacto ya se migró en algún arranque
+  // anterior? Si la marca no existe, está dañada, o apunta a una ruta
+  // distinta, no cuenta como "ya visto" — se prefiere avisar de más a
+  // silenciar un duplicado real.
+  function legadoYaMigrado() {
+    if (!existeSync(rutaMarca)) return false;
+    try {
+      const marca = JSON.parse(leerSync(rutaMarca));
+      return marca?.legadoMigrado === legado;
+    } catch { return false; }
+  }
+
   if (existeNueva) {
     // Ya hay uno en userData (de una migración anterior, o porque siempre
-    // vivió ahí). Si el legado también sigue estando, no hay forma de saber
-    // desde acá si es un resto inofensivo de una migración ya hecha o dos
-    // registros de verdad distintos — se avisa siempre que coexistan.
-    return {
-      ruta: rutaNueva,
-      aviso: existeVieja ? { tipo: "duplicado", rutaUsada: rutaNueva, rutaSinUsar: legado } : null,
-    };
+    // vivió ahí). Si el legado también sigue estando, coexisten dos
+    // registros — salvo que la marca confirme que ESTE legado es el mismo
+    // que ya se migró antes: ahí no es un duplicado nuevo, es el resto
+    // esperado de dejar el legado sin borrar.
+    const aviso = (existeVieja && !legadoYaMigrado())
+      ? { tipo: "duplicado", rutaUsada: rutaNueva, rutaSinUsar: legado }
+      : null;
+    return { ruta: rutaNueva, aviso };
   }
 
   if (!existeVieja) return { ruta: rutaNueva, aviso: null }; // instalación nueva: nada que migrar
@@ -81,10 +106,18 @@ function _resolver({ envRuta, userData, legado, existeSync, copiar, crearCarpeta
     const copiado = leerSync(rutaNueva);
     JSON.parse(copiado); // debe ser JSON válido
     if (copiado !== original) throw new Error("el contenido copiado no coincide con el del archivo original");
+    // Deja constancia de que ESTE legado ya quedó migrado, para no avisar
+    // "duplicado" en cada arranque futuro mientras siga sin borrarse. Si
+    // esto falla (permisos, disco), no invalida una migración que ya se
+    // verificó bien: en el peor caso, se repite el aviso más adelante.
+    try { escribirSync(rutaMarca, JSON.stringify({ legadoMigrado: legado, fecha: new Date().toISOString() }, null, 2)); }
+    catch { /* no crítico, ver comentario arriba */ }
     return { ruta: rutaNueva, aviso: null };
   } catch (e) {
     // No se pudo confirmar la copia: se sigue usando el legado. Nunca se
-    // usa un userData/registro.json a medio escribir o corrupto.
+    // usa un userData/registro.json a medio escribir o corrupto. Este
+    // aviso NUNCA se silencia con la marca: es distinto del "duplicado ya
+    // conocido" de arriba, y tiene que verse siempre hasta que se resuelva.
     return {
       ruta: legado,
       aviso: { tipo: "fallo_migracion", rutaVieja: legado, rutaNuevaFallida: rutaNueva, motivo: e.message },
@@ -110,6 +143,7 @@ function resolverRutaRegistro() {
       copiar: fs.copyFileSync,
       crearCarpeta: p => fs.mkdirSync(p, { recursive: true }),
       leerSync: p => fs.readFileSync(p, "utf8"),
+      escribirSync: (p, contenido) => fs.writeFileSync(p, contenido),
     });
   }
   return cache.ruta;
