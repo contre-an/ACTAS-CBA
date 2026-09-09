@@ -82,17 +82,25 @@ la carpeta del trimestre se recuerda entre sesiones
 | `equipoEjecutor:generar` | `prepararActaEquipoEjecutor(opciones, {simular})` |
 | `pdf:convertir` | `convertirPdf(carpeta, {simular})` |
 | `revertir:ejecutar` | `revertirFecha(carpeta, fecha, {simular})` |
-| `inicializar:crearControl` | copia la plantilla maestra, abre el `.xlsx` en Excel |
+| `inicializar:crearControl` | copia la plantilla maestra dentro de `carpetaTrimestreEfectiva()`, precarga el instructor en PARAMETROS desde la activación, abre el `.xlsx` en Excel |
 | `inicializar:migrarAprendices` | `leerReporteSofia` + `poblarAprendices` |
 | `config:obtener-carpeta-trimestre` | `carpetaTrimestreEfectiva()` (real o, en modo prueba, la carpeta demo) |
-| `config:obtener-codigo-instructor` / `config:guardar-codigo-instructor` | leen/escriben `configuracion.json`, alimentan `ACTAS_CODIGO_INSTRUCTOR` |
+| `activacion:estado` / `activacion:activar` | ver `activacion.js` — reemplazan a los viejos `config:obtener-codigo-instructor` / `config:guardar-codigo-instructor` (el código de instructor dejó de ser un campo libre) |
 | `modoPrueba:obtener` / `modoPrueba:alternar` / `modoPrueba:restablecer` | ver "Modo prueba" abajo |
 
-"Inicializar trimestre" queda como asistente de 2 pasos explícitos (crear
-control → el instructor llena PARAMETROS a mano en Excel → migrar
-aprendices), no un formulario único: PARAMETROS lo sigue llenando el
-instructor a mano, la app no lo automatiza (ver pendiente 3, ya resuelto en
-ese sentido).
+"Nueva ficha" (antes "Inicializar trimestre") queda como asistente de 2
+pasos explícitos (crear control → el instructor llena el resto de
+PARAMETROS a mano en Excel → migrar aprendices), no un formulario único:
+PARAMETROS lo sigue llenando el instructor a mano, la app no lo
+automatiza del todo (ver pendiente 3) — sí precarga INSTRUCTOR/DOCUMENTO
+INSTRUCTOR/CORREO INSTRUCTOR desde la activación, para no repetirlos a
+mano en cada ficha nueva ni arriesgar un typo justo en el campo que
+`esMismoInstructor()` (`equipo_ejecutor.js`) usa para reconocerlo en el
+horario. El paso 1 ya NO elige carpeta destino con un diálogo: siempre
+crea dentro de `carpetaTrimestreEfectiva()`, así una ficha creada por acá
+SIEMPRE aparece en `fichas:listar` al refrescar (antes podía crearse fuera
+del trimestre configurado y quedar invisible en la tabla, sin ningún
+aviso).
 
 ### Modo prueba
 
@@ -108,9 +116,12 @@ compañero sin arriesgar un solo archivo real. Con el modo prendido:
   en vez de la carpeta real configurada; ahí vive una única ficha ficticia
   ("0000000 - FICHA DE DEMOSTRACIÓN (MODO PRUEBA)") que `asegurarFichaDemo()`
   arma automáticamente si no existe.
-- "Inicializar trimestre" queda deshabilitado (`bloquearSiModoPrueba()`):
-  implica diálogos nativos de carpeta/archivo del sistema operativo, que no
-  tiene sentido ni es seguro simular.
+- "Crear control" (paso 1 de "Nueva ficha") ya NO se deshabilita: como el
+  destino siempre es `carpetaTrimestreEfectiva()` (la carpeta demo, con el
+  modo prendido), no hay forma de que toque algo real. "Migrar aprendices"
+  (paso 2) sí sigue deshabilitado (`bloquearSiModoPrueba()`): ese elige el
+  reporte de SOFIA con un diálogo de archivo sin restricciones, que podría
+  traer un archivo real con nombres reales a la demostración.
 - "Restablecer modo prueba" borra y reconstruye SOLO
   `userData/modo_prueba/` (registro de pruebas + ficha demo). Nunca toca
   `registro.json` ni ninguna carpeta de ficha real.
@@ -121,6 +132,14 @@ compañero sin arriesgar un solo archivo real. Con el modo prendido:
 Verificado con Playwright: activar → generar acta dentro del sandbox →
 confirmar que la carpeta y el registro reales no cambiaron en absoluto →
 restablecer → apagar → confirmar que se vuelve a producción intacta.
+
+Verificado también, aparte, el paso 1 de "Nueva ficha" ya sin diálogo de
+destino: con el modo prueba prendido, escribir el nombre y crear —
+confirmado en disco que la carpeta y el `CONTROL_ASISTENCIA_*.xlsx`
+quedaron dentro de `trimestre_demo/` (no en otro lado), que la ficha
+apareció en la tabla sin recargar la ventana, y que PARAMETROS trajo
+INSTRUCTOR/DOCUMENTO INSTRUCTOR/CORREO INSTRUCTOR ya escritos desde la
+activación — sin errores de consola.
 
 ### Numeración compuesta de actas
 
@@ -285,16 +304,22 @@ Ya tiene interfaz (`inicializar:crearControl` / `inicializar:migrarAprendices`
 en `src/main/ipc.js`), como asistente de 2 pasos con una pausa manual en medio
 (el instructor llena PARAMETROS en Excel):
 
-1. El instructor elige la carpeta de la ficha (o la app la detecta con
-   `estado.js → clasificarArchivos`).
+1. El instructor solo escribe el nombre de la carpeta; el destino ya no se
+   elige, siempre es `carpetaTrimestreEfectiva()` (la carpeta del
+   trimestre configurada, o la de demostración en modo prueba). Nunca pasó
+   a usarse `estado.js → clasificarArchivos` para esto — esa función
+   (junto con `resolverControl`, `sesionesNuevas`, `marcarSesiones`,
+   `registrarActa`) quedó sin ningún llamador en todo el proyecto: código
+   muerto de un diseño anterior.
 2. Se copia `PLANTILLA_MAESTRA_CONTROL_ASISTENCIA V3.xlsx` (ya en el
    proyecto, ver pendiente 1) a `CONTROL_ASISTENCIA_<ficha>.xlsx` en esa
-   carpeta.
-3. El instructor llena a mano `FICHA`, `PROGRAMA DE FORMACION`,
-   `COMPETENCIA`, `INSTRUCTOR` (nombre, documento, correo) en PARAMETROS:
-   el control es suyo, de una competencia, y esos datos no salen del
-   horario (ver pendiente 2 y 3 — aclarado por el instructor:
-   `horario.js` NO alimenta PARAMETROS).
+   carpeta, y se escribe ahí mismo INSTRUCTOR/DOCUMENTO
+   INSTRUCTOR/CORREO INSTRUCTOR en PARAMETROS desde la activación (ver
+   `activacion.js`).
+3. El instructor llena a mano el resto: `FICHA`, `PROGRAMA DE FORMACION`,
+   `COMPETENCIA` en PARAMETROS — esos datos no salen del horario (ver
+   pendiente 2 y 3 — aclarado por el instructor: `horario.js` NO alimenta
+   PARAMETROS).
 4. `sofia.js → leerReporteSofia(rutaXls)` da la lista de aprendices, ya con
    `EN INDUCCIÓN` corregido a `EN FORMACION`.
 5. Vista previa al instructor (cuántos aprendices, el aviso de

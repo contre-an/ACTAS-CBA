@@ -11,6 +11,7 @@
 const { ipcMain, dialog, shell } = require("electron");
 const fs = require("fs");
 const path = require("path");
+const XLSX = require("xlsx");
 
 const RAIZ = path.join(__dirname, "..", "..");
 const requerir = nombre => require(path.join(RAIZ, nombre));
@@ -288,42 +289,68 @@ ipcMain.handle("revertir:ejecutar", (_e, carpeta, fecha, opciones) => {
   catch (e) { return { carpeta, error: e.message }; }
 });
 
-// ===== Inicializar trimestre =====
-// Paso A: crear la carpeta de la ficha y copiar la plantilla en blanco.
-// El instructor la abre y llena PARAMETROS a mano (ficha, competencia,
-// instructor: un control es de un solo instructor y una sola competencia).
+// ===== Nueva ficha =====
+// Paso 1: crear la carpeta DENTRO de la carpeta del trimestre configurada
+// (ya no un destino elegido a mano con un diálogo: así una ficha creada
+// acá SIEMPRE aparece en fichas:listar al refrescar, nunca queda invisible
+// por haberse creado fuera de ese directorio) y copiar la plantilla en
+// blanco, con el instructor ya precargado en PARAMETROS desde la
+// activación (nombre/documento/correo verificados por HMAC, ver
+// activacion.js — sin eso, el instructor los tecleaba a mano cada vez,
+// justo en el campo que equipo_ejecutor.js usa para reconocerlo en el
+// horario). El instructor abre el .xlsx y llena el resto de PARAMETROS a
+// mano (ficha, programa, competencia: un control es de un solo instructor
+// y una sola competencia).
 //
-// Deshabilitado con el modo prueba prendido: a diferencia de las demás
-// acciones (que operan sobre la carpeta que ya devolvió fichas:listar, y
-// esa carpeta es la de demostración cuando el modo prueba está prendido),
-// "inicializar trimestre" deja que el instructor elija CUALQUIER carpeta
-// real por un diálogo nativo del sistema operativo — es el único punto
-// donde el modo prueba no puede garantizar que nada real se toque, así que
-// se bloquea en vez de arriesgarse.
+// Ya NO se bloquea en modo prueba: a diferencia de antes (un diálogo
+// nativo dejaba elegir CUALQUIER carpeta real), el destino es siempre
+// carpetaTrimestreEfectiva(), que en modo prueba ya es la carpeta de
+// demostración — no hay forma de que esto toque algo real.
 function bloquearSiModoPrueba() {
   if (cargarConfiguracion().modoPrueba)
-    throw new Error("Inicializar trimestre está deshabilitado en modo prueba: implica elegir carpetas reales del computador. Apaga el modo prueba para usarlo.");
+    throw new Error("Migrar aprendices está deshabilitado en modo prueba: el reporte de SOFIA se elige con un diálogo libre, que podría traer un archivo real. Apaga el modo prueba para usarlo.");
 }
 
-ipcMain.handle("inicializar:elegirCarpetaDestino", async () => {
-  const r = await dialog.showOpenDialog({ properties: ["openDirectory"], title: "Carpeta donde crear la ficha" });
-  return r.canceled || !r.filePaths.length ? null : r.filePaths[0];
-});
+function establecerParametrosInstructor(rutaControl, act) {
+  const wb = XLSX.readFile(rutaControl, { cellDates: true });
+  const filas = XLSX.utils.sheet_to_json(wb.Sheets["PARAMETROS"], { header: 1, defval: null });
+  for (const fila of filas) {
+    const clave = String(fila[0] ?? "").trim().toUpperCase();
+    if (clave === "INSTRUCTOR") fila[1] = act.nombre;
+    if (clave === "DOCUMENTO INSTRUCTOR") fila[1] = act.documento;
+    if (clave === "CORREO INSTRUCTOR") fila[1] = act.correo;
+  }
+  wb.Sheets["PARAMETROS"] = XLSX.utils.aoa_to_sheet(filas);
+  XLSX.writeFile(wb, rutaControl);
+}
 
-ipcMain.handle("inicializar:crearControl", (_e, { carpetaDestino, nombreCarpeta }) => {
+ipcMain.handle("inicializar:crearControl", (_e, { nombreCarpeta }) => {
   try {
-    bloquearSiModoPrueba();
-    const carpetaFicha = path.join(carpetaDestino, nombreCarpeta);
+    const carpetaTrimestre = carpetaTrimestreEfectiva();
+    if (!carpetaTrimestre) return { error: "Elegí primero la carpeta del trimestre." };
+
+    const carpetaFicha = path.join(carpetaTrimestre, nombreCarpeta);
+    // No era una carpeta nueva de verdad: se avisa (no se bloquea — puede
+    // ser legítimo reusar una carpeta suelta), para que no quede mezclada
+    // en silencio con lo que ya hubiera ahí.
+    const carpetaYaExistia = fs.existsSync(carpetaFicha);
     fs.mkdirSync(carpetaFicha, { recursive: true });
     const rutaControl = path.join(carpetaFicha, `CONTROL_ASISTENCIA_${nombreCarpeta}.xlsx`);
     if (fs.existsSync(rutaControl)) return { error: `Ya existe ${path.basename(rutaControl)} en esa carpeta.` };
     fs.copyFileSync(RUTA_PLANTILLA_MAESTRA, rutaControl);
-    shell.openPath(rutaControl); // el instructor llena PARAMETROS a mano, en Excel
-    return { carpetaFicha, rutaControl };
+
+    const estado = activacion.estadoActivacion(cargarConfiguracion(), activacion.resolverSecreto());
+    if (estado.activado) establecerParametrosInstructor(rutaControl, estado.activacion);
+
+    shell.openPath(rutaControl); // el instructor llena el resto de PARAMETROS a mano, en Excel
+    return {
+      carpetaFicha, rutaControl,
+      aviso: carpetaYaExistia ? `La carpeta "${nombreCarpeta}" ya existía en la carpeta del trimestre: se usó tal cual, no es una carpeta nueva.` : null,
+    };
   } catch (e) { return { error: e.message }; }
 });
 
-// Paso B: una vez PARAMETROS está lleno, migrar los aprendices desde SOFIA.
+// Paso 2: una vez PARAMETROS está lleno, migrar los aprendices desde SOFIA.
 
 ipcMain.handle("inicializar:elegirReporteSofia", async () => {
   const r = await dialog.showOpenDialog({ properties: ["openFile"], filters: [{ name: "Reporte de SOFIA", extensions: ["xls", "xlsx"] }], title: "Reporte de aprendices de SOFIA" });

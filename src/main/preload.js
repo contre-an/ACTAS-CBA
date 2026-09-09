@@ -32,7 +32,6 @@ contextBridge.exposeInMainWorld("actas", {
 
   revertir: invocar("revertir:ejecutar"),
 
-  elegirCarpetaDestinoFicha: invocar("inicializar:elegirCarpetaDestino"),
   crearControlDesdeplantilla: invocar("inicializar:crearControl"),
   elegirReporteSofia: invocar("inicializar:elegirReporteSofia"),
   migrarAprendices: invocar("inicializar:migrarAprendices"),

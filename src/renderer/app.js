@@ -107,16 +107,18 @@ el("btn-cambiar-carpeta").addEventListener("click", async () => {
 // Con el modo prueba prendido: la carpeta del trimestre pasa a ser la ficha
 // de demostración (fichas:listar la recibe igual que cualquier otra, así
 // que TODAS las acciones —generar actas, entrega, equipo ejecutor,
-// revertir, convertir a PDF— quedan automáticamente dentro del sandbox, sin
-// tener que tocarlas una por una). "Inicializar trimestre" es la única
-// excepción: se deshabilita (ver bloquearSiModoPrueba en ipc.js) porque
-// implica elegir carpetas o archivos reales por diálogo nativo del sistema,
-// algo que el modo prueba no puede aislar.
+// revertir, convertir a PDF, y ahora también "Crear control desde la
+// plantilla"— quedan automáticamente dentro del sandbox, sin tener que
+// tocarlas una por una: "Crear control" ya no elige carpeta con un
+// diálogo libre, siempre usa la carpeta del trimestre efectiva). Sigue
+// deshabilitado, y a propósito, "Migrar aprendices": ese paso elige el
+// reporte de SOFIA con un diálogo de archivo sin restricciones, que
+// podría traer un archivo real con nombres reales a la demostración (ver
+// bloquearSiModoPrueba en ipc.js).
 
 function aplicarEstadoModoPrueba(activo) {
   el("banner-modo-prueba").hidden = !activo;
   el("chk-modo-prueba").checked = activo;
-  el("btn-init-crear").disabled = activo;
   el("btn-init-migrar").disabled = activo;
 }
 
@@ -302,17 +304,21 @@ el("btn-revertir").addEventListener("click", () => {
   });
 });
 
-// ===== Inicializar trimestre =====
+// ===== Nueva ficha =====
+// Paso 1 ya no elige carpeta destino: siempre se crea dentro de la
+// carpeta del trimestre ya configurada arriba (ver ipc.js).
 
 el("btn-init-crear").addEventListener("click", async () => {
   const nombre = el("init-nombre").value.trim();
   if (!nombre) { alert("Escribe el nombre de la carpeta de la ficha."); return; }
-  const carpetaDestino = await window.actas.elegirCarpetaDestinoFicha();
-  if (!carpetaDestino) return;
-  const r = await window.actas.crearControlDesdeplantilla({ carpetaDestino, nombreCarpeta: nombre });
-  agregarResultado("Crear control desde la plantilla", r.error
-    ? `<p class="error-texto">${escapeHtml(r.error)}</p>`
-    : `<p class="exito-texto">Creado en ${escapeHtml(r.rutaControl)}. Se abrió en Excel: llena PARAMETROS y guarda antes del paso 2.</p>`);
+  const r = await window.actas.crearControlDesdeplantilla({ nombreCarpeta: nombre });
+  const partes = [];
+  if (r.error) partes.push(`<p class="error-texto">${escapeHtml(r.error)}</p>`);
+  else {
+    if (r.aviso) partes.push(`<p class="aviso">${escapeHtml(r.aviso)}</p>`);
+    partes.push(`<p class="exito-texto">Creado en ${escapeHtml(r.rutaControl)}. Se abrió en Excel: llena el resto de PARAMETROS y guarda antes del paso 2.</p>`);
+  }
+  agregarResultado("Crear control desde la plantilla", partes.join(""));
   if (!r.error) await cargarFichas();
 });
 
