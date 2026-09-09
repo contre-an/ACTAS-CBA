@@ -3,7 +3,7 @@ const fs = require("fs");
 const path = require("path");
 const XLSX = require("xlsx");
 const PizZip = require("pizzip");
-const { generarActa, generarActaEntrega, cargarRegistro, guardarRegistro } = require("./generar");
+const { generarActa, generarActaEntrega, cargarRegistro, guardarRegistro, resumenMotivos } = require("./generar");
 
 const fechaHoy = () => { const d = new Date(); return `${d.getFullYear()}/${String(d.getMonth()+1).padStart(2,"0")}/${String(d.getDate()).padStart(2,"0")}`; };
 const norm = s => String(s ?? "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/\s+/g, " ").trim().toUpperCase();
@@ -141,17 +141,6 @@ function evaluarAprendiz(a, sesiones, notaMin) {
 
 const ETIQUETA = { LLAMADO_1: "PRIMER LLAMADO DE ATENCIÓN", LLAMADO_2: "SEGUNDO LLAMADO DE ATENCIÓN",
   PLAN_MEJORAMIENTO: "PLAN DE MEJORAMIENTO", INFORME_COMITE: "INFORME A COMITÉ DE EVALUACIÓN Y SEGUIMIENTO" };
-
-function resumenMotivos(incidentes) {
-  const c = { INASISTENCIA: 0, NO_PRESENTO: 0, NOTA_BAJA: 0, RETARDOS: 0 };
-  for (const i of incidentes) c[i.tipo] = (c[i.tipo] || 0) + 1;
-  const partes = [];
-  if (c.INASISTENCIA) partes.push(`${c.INASISTENCIA} inasistencia(s) injustificada(s)`);
-  if (c.NO_PRESENTO) partes.push(`${c.NO_PRESENTO} evidencia(s) no presentada(s)`);
-  if (c.NOTA_BAJA) partes.push(`${c.NOTA_BAJA} evidencia(s) no superada(s)`);
-  if (c.RETARDOS) partes.push(`${c.RETARDOS} grupo(s) de retardos`);
-  return partes.join(", ") || "Incidentes registrados en el control";
-}
 
 function xmlEscape(s) {
   return String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");

@@ -64,6 +64,58 @@ function textoIncidente(inc, n) {
   return `${base}: ${inc.motivo || "incidente registrado en el control de asistencia de la ficha"}.`;
 }
 
+// ---- resumen corto de motivos para el historial y para la hoja HISTORICO ----
+function resumenMotivos(incidentes) {
+  const c = { INASISTENCIA: 0, NO_PRESENTO: 0, NOTA_BAJA: 0, RETARDOS: 0 };
+  for (const i of incidentes) c[i.tipo] = (c[i.tipo] || 0) + 1;
+  const partes = [];
+  if (c.INASISTENCIA) partes.push(`${c.INASISTENCIA} inasistencia(s) injustificada(s)`);
+  if (c.NO_PRESENTO) partes.push(`${c.NO_PRESENTO} evidencia(s) no presentada(s)`);
+  if (c.NOTA_BAJA) partes.push(`${c.NOTA_BAJA} evidencia(s) no superada(s)`);
+  if (c.RETARDOS) partes.push(`${c.RETARDOS} grupo(s) de retardos`);
+  return partes.join(", ") || "Incidentes registrados en el control";
+}
+
+// ---- denominación en prosa de cada medida previa, para el relato del
+// informe a comité (distinta de TIPOS[].titulo, que es para el título de
+// cada acta individual, en mayúsculas y con "ACADÉMICO" al final) ----
+const DENOMINACION_MEDIDA = {
+  LLAMADO_1: "primer llamado de atención",
+  LLAMADO_2: "segundo llamado de atención",
+  PLAN_MEJORAMIENTO: "plan de mejoramiento académico",
+};
+
+// resumenMotivos() guarda el motivo con marcadores "(s)" porque también
+// alimenta la hoja HISTORICO (ver procesar.js) con un formato fijo. Para el
+// relato en prosa del informe a comité, cada tramo (separado por ", ")
+// resuelve su propio singular/plural según el número con el que empieza,
+// sin tocar el campo guardado ni resumenMotivos.
+function formatoMotivoHistorial(motivo) {
+  if (!motivo) return "incidentes registrados en el control de la ficha";
+  return motivo
+    .split(", ")
+    .map(parte => parte.replace(/\(s\)/g, /^1\s/.test(parte) ? "" : "s"))
+    .join(", ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+// Relato cronológico de las medidas formativas previas del aprendiz (Art.
+// 46), para encadenar en construirInformeComite. Solo entradas del
+// historial cuyo tipo tiene denominación (así se excluyen, sin caso
+// especial, tanto un INFORME_COMITE previo como cualquier tipo futuro que
+// se agregue sin denominación); el llamado del informe que se está
+// generando nunca llega aquí porque generarActa pasa apr.historial ANTES
+// de hacerle push a esta entrada.
+function relacionMedidasPrevias(historial) {
+  const previas = (historial || []).filter(h => DENOMINACION_MEDIDA[h.tipo]);
+  if (!previas.length) return "";
+  const relatos = previas.map(h =>
+    `mediante acta ${h.numero}, ${DENOMINACION_MEDIDA[h.tipo]} por ${formatoMotivoHistorial(h.motivo)}, del ${h.fecha}`
+  );
+  return `Previamente, en el marco del proceso formativo, se adelantaron las siguientes actuaciones: ${relatos.join("; ")}. `;
+}
+
 const TIPOS = {
   LLAMADO_1: {
     titulo: "PRIMER LLAMADO DE ATENCIÓN ACADÉMICO",
@@ -169,10 +221,11 @@ function construirContenido(d, tipo, numero) {
 }
 
 
-function construirInformeComite(d, numero) {
+function construirInformeComite(d, numero, historialPrevio) {
   const hoy = new Date();
   const hechos = d.incidentes.map((inc, k) => textoIncidente(inc, k + 1)).join(" ");
-  const intro = `El instructor ${d.instructor.nombre}, de la competencia ${d.competencia} del programa ${d.programa} (ficha ${d.ficha}), remite al Comité de Evaluación y Seguimiento el caso del aprendiz ${d.aprendiz.nombre}, identificado con documento ${d.aprendiz.documento}, por cuanto, agotados los dos (2) llamados de atención académicos y el plan de mejoramiento previstos en el Artículo 46 del Acuerdo 009 de 2024 sin que el aprendiz superara las situaciones, y conforme al Parágrafo 4 del mismo artículo, se activa la remisión a este Comité. Los hechos son los siguientes: ${hechos} Se deja constancia de que el aprendiz fue informado de cada medida y ejerció su derecho a ser oído, en garantía del debido proceso (Artículos 39 y 5 del Acuerdo 009 de 2024).`;
+  const relacion = relacionMedidasPrevias(historialPrevio);
+  const intro = `El instructor ${d.instructor.nombre}, de la competencia ${d.competencia} del programa ${d.programa} (ficha ${d.ficha}), remite al Comité de Evaluación y Seguimiento el caso del aprendiz ${d.aprendiz.nombre}, identificado con documento ${d.aprendiz.documento}, por cuanto, agotados los dos (2) llamados de atención académicos y el plan de mejoramiento previstos en el Artículo 46 del Acuerdo 009 de 2024 sin que el aprendiz superara las situaciones, y conforme al Parágrafo 4 del mismo artículo, se activa la remisión a este Comité. ${relacion}Los hechos que motivan este informe son los siguientes: ${hechos} Se deja constancia de que el aprendiz fue informado de cada medida y ejerció su derecho a ser oído, en garantía del debido proceso (Artículos 39 y 5 del Acuerdo 009 de 2024).`;
   return {
     numero_informe: numero,
     anio: hoy.getFullYear(), mes: String(hoy.getMonth() + 1).padStart(2, "0"), dia: String(hoy.getDate()).padStart(2, "0"),
@@ -354,7 +407,7 @@ function generarActa(datos) {
   if (tipo === "INFORME_COMITE") {
     const zip = new PizZip(fs.readFileSync(PLANTILLA_COMITE));
     const doc = new Docxtemplater(zip, { paragraphLoop: true, linebreaks: true });
-    doc.render(construirInformeComite(datos, numero));
+    doc.render(construirInformeComite(datos, numero, apr.historial));
     buffer = doc.getZip().generate({ type: "nodebuffer", compression: "DEFLATE" });
     apr.comite = true;
   } else {
@@ -365,11 +418,11 @@ function generarActa(datos) {
     if (tipo === "PLAN_MEJORAMIENTO") apr.planes += 1; else apr.llamados += 1;
   }
 
-  apr.historial.push({ numero, tipo, fecha: fechaCorta(), nombre: datos.aprendiz.nombre });
+  apr.historial.push({ numero, tipo, fecha: fechaCorta(), nombre: datos.aprendiz.nombre, motivo: resumenMotivos(datos.incidentes) });
   reg.aprendices[clave] = apr;
   guardarRegistro(reg);
 
   return { buffer, tipo, numero };
 }
 
-module.exports = { generarActa, generarActaEntrega, generarActaEquipoEjecutor, cargarRegistro, guardarRegistro };
+module.exports = { generarActa, generarActaEntrega, generarActaEquipoEjecutor, cargarRegistro, guardarRegistro, resumenMotivos };

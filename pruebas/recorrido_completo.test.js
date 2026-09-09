@@ -148,6 +148,7 @@ test("recorrido completo, ficha ficticia 9000001", async t => {
   });
 
   let reg;
+  let casoInformeComite;
 
   await t.test("1. migrar aprendices desde el reporte de SOFIA", () => {
     crearReporteSofiaFicticio(RUTA_SOFIA);
@@ -230,6 +231,7 @@ test("recorrido completo, ficha ficticia 9000001", async t => {
     marcarAsistencia(1, SESIONES[3].col, 0); // 22/07
     resumen = procesarControl(RUTA_CONTROL, false, false);
     assert.equal(resumen.casos[0].medida, "INFORME_COMITE");
+    casoInformeComite = resumen.casos[0]; // se usa en 6b, antes de que "ya en comité" reasigne resumen
 
     marcarAsistencia(1, SESIONES[4].col, 0); // 29/07: ya no debería generar más documentos
     resumen = procesarControl(RUTA_CONTROL, false, false);
@@ -238,6 +240,35 @@ test("recorrido completo, ficha ficticia 9000001", async t => {
     reg = leerRegistro();
     assert.equal(reg.consecutivo, 4, "el intento 'ya en comité' no generó documento ni consumió numero");
     assert.equal(reg.aprendices[`${FICHA}-100000001`].historial.length, 4);
+  });
+
+  await t.test("6b. el informe a comité encadena las tres medidas previas, en orden, sin incluirse a sí mismo", () => {
+    const texto = textoDocx(archivoDeCaso(casoInformeComite));
+    const clave = `${FICHA}-100000001`;
+    const historial = reg.aprendices[clave].historial;
+    const previas = historial.filter(h => h.tipo !== "INFORME_COMITE");
+    assert.equal(previas.length, 3, "debe haber exactamente llamado 1, llamado 2 y plan de mejoramiento antes del informe");
+
+    const DENOMINACION_ESPERADA = {
+      LLAMADO_1: "primer llamado de atención",
+      LLAMADO_2: "segundo llamado de atención",
+      PLAN_MEJORAMIENTO: "plan de mejoramiento académico",
+    };
+
+    let posicionAnterior = -1;
+    for (const h of previas) {
+      const inicio = `mediante acta ${h.numero}, ${DENOMINACION_ESPERADA[h.tipo]} por`;
+      const pos = texto.indexOf(inicio);
+      assert.ok(pos !== -1, `debe citar "${inicio}"`);
+      assert.ok(texto.indexOf(`, del ${h.fecha}`, pos) > pos, `debe traer la fecha ${h.fecha} después de "${inicio}"`);
+      assert.ok(pos > posicionAnterior, "las medidas deben aparecer en orden cronológico");
+      posicionAnterior = pos;
+    }
+
+    // la entrada del propio informe (ya en el historial para entonces) no debe citarse en su propio relato
+    const propio = historial[historial.length - 1];
+    assert.equal(propio.tipo, "INFORME_COMITE");
+    assert.doesNotMatch(texto, new RegExp(`mediante acta ${propio.numero}`), "el informe no debe citarse a sí mismo en su propio relato");
   });
 
   let rutaActaEquipoEjecutor;
