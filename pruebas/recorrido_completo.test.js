@@ -313,11 +313,14 @@ test("recorrido completo, ficha ficticia 9000001", async t => {
     const texto = textoDocx(rutaActaEquipoEjecutor);
     assert.doesNotMatch(texto, /\{[^}]+\}/, "no deben quedar marcadores sin reemplazar");
 
-    // Paso 2 del pendiente (ver ARQUITECTURA.md): la entrada nueva en
-    // reg.equipoEjecutor debe traer la ruta completa del .docx, para que
-    // revertirFecha (paso 3) pueda borrarlo sin adivinar dónde quedó.
+    // La entrada nueva en reg.equipoEjecutor trae la ruta de su .docx,
+    // RELATIVA a la carpeta del trimestre (el padre de CARPETA, que en esta
+    // prueba hace de "carpeta de ficha"), no absoluta -- así revertirFecha
+    // puede encontrarla sin que se rompa si la carpeta del trimestre se
+    // mueve, cambia de letra de unidad, o la maquina se reinstala.
     const entrada = leerRegistro().equipoEjecutor[String(FICHA)].find(e => e.numero === real.numero);
-    assert.equal(entrada.ruta, rutaActaEquipoEjecutor);
+    assert.equal(path.isAbsolute(entrada.ruta), false, "se guarda relativa a la carpeta del trimestre, no absoluta");
+    assert.equal(path.join(path.dirname(CARPETA), entrada.ruta), rutaActaEquipoEjecutor, "debe resolver de vuelta al mismo archivo");
   });
 
   await t.test("8. convertir a PDF sin modificar los .docx", { skip: !wordInstalado() && "Word no está instalado en este equipo" }, () => {
@@ -435,6 +438,84 @@ test("recorrido completo, ficha ficticia 9000001", async t => {
     assert.ok(Array.isArray(regDespues.equipoEjecutor[String(FICHA)]), "la clave de la ficha NO se elimina: le queda la otra entrada");
     assert.equal(regDespues.equipoEjecutor[String(FICHA)].length, 1);
     assert.equal(regDespues.equipoEjecutor[String(FICHA)][0].numero, "951210-00-202", "la entrada de la otra fecha sobrevive intacta");
+  });
+
+  await t.test("12b. migración perezosa: ruta absoluta de OTRA fecha, dentro de la carpeta del trimestre, se convierte a relativa al revertir cualquier cosa de esta ficha", () => {
+    const hoyISO = hoyISOLocal();
+    const { ddmmaaaa: fechaHoy } = normalizarFecha(hoyISO);
+    const fechaVieja = "01/01/2026";
+
+    const rutaHoy = path.join(CARPETA, "ACTA_951210-00-401_EQUIPO_EJECUTOR_FICHA_DUMMY_HOY.docx");
+    const rutaViejaAbsolutaDentro = path.join(CARPETA, "ACTA_951210-00-402_EQUIPO_EJECUTOR_FICHA_DUMMY_VIEJA.docx");
+    fs.writeFileSync(rutaHoy, "dummy hoy");
+    fs.writeFileSync(rutaViejaAbsolutaDentro, "dummy vieja, dentro del trimestre");
+
+    const reg = leerRegistro();
+    reg.equipoEjecutor = { [String(FICHA)]: [
+      { numero: "951210-00-401", fecha: fechaHoy, ruta: rutaHoy },
+      { numero: "951210-00-402", fecha: fechaVieja, ruta: rutaViejaAbsolutaDentro }, // sobrevive: es de otra fecha
+    ] };
+    fs.writeFileSync(process.env.ACTAS_REGISTRO_RUTA, JSON.stringify(reg, null, 2));
+
+    revertirFecha(CARPETA, hoyISO, { simular: false }); // toca esta ficha -> dispara la migración perezosa
+
+    const entradaVieja = leerRegistro().equipoEjecutor[String(FICHA)].find(e => e.numero === "951210-00-402");
+    assert.ok(entradaVieja, "la entrada de la otra fecha sigue ahí, no se revirtió");
+    assert.equal(path.isAbsolute(entradaVieja.ruta), false, "se migró a relativa de paso, aunque no era la que se estaba revirtiendo");
+    assert.equal(path.join(path.dirname(CARPETA), entradaVieja.ruta), rutaViejaAbsolutaDentro, "sigue resolviendo al mismo archivo de siempre");
+    assert.ok(fs.existsSync(rutaViejaAbsolutaDentro), "el archivo en sí no se toca, solo el dato guardado en el registro");
+  });
+
+  await t.test("12c. ruta absoluta FUERA de la carpeta del trimestre: se deja como está, nunca se migra", () => {
+    const hoyISO = hoyISOLocal();
+    const { ddmmaaaa: fechaHoy } = normalizarFecha(hoyISO);
+    const fechaVieja = "01/01/2026";
+
+    const rutaHoy = path.join(CARPETA, "ACTA_951210-00-501_EQUIPO_EJECUTOR_FICHA_DUMMY_HOY.docx");
+    // Fuera de la carpeta del trimestre (padre de CARPETA): un nivel más
+    // arriba, junto a "tmp/", no adentro. No hace falta que exista de
+    // verdad: rutaRelativaSiCorresponde es matemática de rutas, no toca fs.
+    const rutaFueraDelTrimestre = path.join(__dirname, "fuera-del-trimestre", "ACTA_VIEJA_DE_OTRO_LADO.docx");
+    fs.writeFileSync(rutaHoy, "dummy hoy");
+
+    const reg = leerRegistro();
+    reg.equipoEjecutor = { [String(FICHA)]: [
+      { numero: "951210-00-501", fecha: fechaHoy, ruta: rutaHoy },
+      { numero: "951210-00-502", fecha: fechaVieja, ruta: rutaFueraDelTrimestre },
+    ] };
+    fs.writeFileSync(process.env.ACTAS_REGISTRO_RUTA, JSON.stringify(reg, null, 2));
+
+    revertirFecha(CARPETA, hoyISO, { simular: false });
+
+    const entradaVieja = leerRegistro().equipoEjecutor[String(FICHA)].find(e => e.numero === "951210-00-502");
+    assert.equal(entradaVieja.ruta, rutaFueraDelTrimestre, "queda exactamente igual: absoluta, sin tocar");
+  });
+
+  await t.test("12d. ruta relativa guardada que ya no resuelve a ningún archivo: avisa qué ruta intentó y qué hacer, no falla en silencio", () => {
+    const hoyISO = hoyISOLocal();
+    const { ddmmaaaa } = normalizarFecha(hoyISO);
+    const rutaRelativaInexistente = path.join("NO_EXISTE", "ACTA_QUE_YA_NO_ESTA.docx");
+
+    const reg = leerRegistro();
+    reg.equipoEjecutor = { [String(FICHA)]: [{ numero: "951210-00-601", fecha: ddmmaaaa, ruta: rutaRelativaInexistente }] };
+    fs.writeFileSync(process.env.ACTAS_REGISTRO_RUTA, JSON.stringify(reg, null, 2));
+
+    const previa = revertirFecha(CARPETA, hoyISO); // simular=true por defecto
+    assert.equal(previa.equipoEjecutorRevertido.length, 1);
+    assert.equal(previa.equipoEjecutorRevertido[0].ruta, null, "no resolvió a nada: no hay ruta utilizable");
+    assert.equal(previa.avisos.length, 1);
+    const rutaResueltaEsperada = path.join(path.dirname(CARPETA), rutaRelativaInexistente);
+    assert.match(previa.avisos[0], new RegExp("951210-00-601"));
+    assert.ok(previa.avisos[0].includes(rutaResueltaEsperada), "debe mostrar la ruta que intentó, ya resuelta");
+    assert.match(previa.avisos[0], /movido o borrado a mano/, "debe decir qué pudo haber pasado");
+    assert.match(previa.avisos[0], /localizarlo y borrarlo a mano/, "debe decir qué hacer, no solo qué pasó");
+
+    const resultado = revertirFecha(CARPETA, hoyISO, { simular: false }); // no debe lanzar
+    assert.equal(resultado.avisos.length, 1);
+    assert.equal(resultado.archivosNoBorrados.length, 0, "no se intentó borrar nada: no había ruta válida que intentar");
+
+    const regDespues = leerRegistro();
+    assert.equal(regDespues.equipoEjecutor[String(FICHA)], undefined, "la entrada se quita igual del registro");
   });
 
   await t.test("13. un .docx bloqueado sigue abortando la reversión (sin cambios)", () => {

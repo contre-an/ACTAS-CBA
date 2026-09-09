@@ -376,12 +376,14 @@ aprobación. Estado actual por función:
      documento real distinto.
    - **Paso 2 (hecho)**: `prepararActaEquipoEjecutor` (`equipo_ejecutor.js`)
      ahora completa la entrada de `reg.equipoEjecutor[ficha]` con la ruta
-     completa del `.docx` (campo `ruta`), justo después de escribirlo —
-     igual patrón que ya usa `procesar.js` tras `generarActa()` para
-     completar `archivo` en el historial del aprendiz. `generarActaEquipoEjecutor`
+     de su `.docx` (campo `ruta`), justo después de escribirlo — igual
+     patrón que ya usa `procesar.js` tras `generarActa()` para completar
+     `archivo` en el historial del aprendiz. `generarActaEquipoEjecutor`
      (en `generar.js`) no lo hace directamente porque no conoce la carpeta
      de salida ni el nombre del archivo; eso lo decide quien la llama.
-     Solo aplica a las actas nuevas; las viejas quedan sin `ruta`.
+     Solo aplica a las actas nuevas; las viejas quedan sin `ruta`. Desde el
+     paso 4 (ver abajo), esa ruta se guarda relativa a la carpeta del
+     trimestre, no absoluta.
    - **Paso 3 (hecho)**: `revertirFecha` ahora detecta las entradas de
      `reg.equipoEjecutor[ficha]` cuya fecha coincida con la revertida, las
      incluye en `numerosARevertir` (para el HISTORICO y el consecutivo, ya
@@ -396,6 +398,37 @@ aprobación. Estado actual por función:
      entradas con fechas distintas, revertir una deja la otra intacta, con
      su `.docx` sin borrar y sin que se elimine la clave de la ficha en
      `reg.equipoEjecutor`).
+   - **Paso 4 (hecho)**: `ruta` era el único sitio de todo el proyecto que
+     persistía una ruta absoluta — se rompía si el instructor movía la
+     carpeta del trimestre, cambiaba de letra de unidad o reinstalaba
+     Windows, justo lo que `revertirFecha` necesita para borrar el `.docx`
+     y su `.pdf`. Ahora se guarda **relativa a la carpeta del trimestre**
+     (`rutaRelativaSiCorresponde`/`resolverRutaEquipoEjecutor`, en
+     `equipo_ejecutor.js`). La carpeta del trimestre nunca se relee de
+     `configuracion.json` en este flujo: se deriva como el padre de la
+     carpeta de ficha que ya llega como parámetro (`fichas:listar`, en
+     `ipc.js`, arma cada carpeta de ficha como hija directa de
+     `carpetaTrimestre`, siempre) — así, si el instructor configura otro
+     trimestre entre generar y revertir, no afecta la ficha ya
+     seleccionada, que se resuelve contra su propia carpeta, no contra el
+     valor de configuración vigente en ese momento.
+     - Compatibilidad: `path.isAbsolute()` distingue el formato viejo del
+       nuevo en cada lectura — las rutas absolutas ya guardadas siguen
+       resolviendo exactamente igual que antes.
+     - Migración perezosa (no un script aparte): cuando `revertirFecha`
+       toca una ficha, de paso convierte a relativa cualquier `ruta`
+       absoluta de esa ficha que caiga DENTRO de la carpeta del trimestre
+       actual; si cae fuera, se deja intacta (no hay forma segura de
+       saber a qué correspondía). Solo se persiste si `simular=false`
+       (mismo `guardarRegistro` que ya hace la reversión real). Una ficha
+       en la que nunca se revierte nada no se migra sola — sigue
+       funcionando por la vía de compatibilidad, solo no se "limpia".
+     - Si una ruta guardada (de cualquiera de los dos formatos) ya no
+       resuelve a un archivo existente, se avisa con la ruta resuelta que
+       se intentó y qué hacer (el `.docx` pudo haberse movido o borrado a
+       mano; localizarlo y borrarlo a mano) — nunca en silencio, y con un
+       mensaje distinto del caso "no tiene `ruta` guardada" (actas de
+       antes del paso 2).
    - La generación del `.xlsx` de deserción (paso 2 del flujo real, no
      construido) y su reversión quedan fuera de este alcance — es
      funcionalidad nueva, no un hueco de `revertirFecha`.

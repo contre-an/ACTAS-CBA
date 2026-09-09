@@ -13,6 +13,37 @@ const { leerHorario, resumenInstructores } = require("./horario");
 const { leerControl, norm, evaluarAprendiz, recibeLlamado, categoriaDe, CATEGORIAS } = require("./procesar");
 const { generarActaEquipoEjecutor, cargarRegistro, guardarRegistro } = require("./generar");
 
+// ===== reg.equipoEjecutor[ficha][].ruta: relativa a la carpeta del
+// trimestre, no absoluta =====
+// Antes se guardaba la ruta absoluta del .docx. Se rompía si el instructor
+// movía la carpeta del trimestre, cambiaba de letra de unidad o
+// reinstalaba Windows — y era justo lo que revertirFecha (revertir.js)
+// necesita para borrar el .docx/.pdf. Ahora se guarda relativa a la
+// carpeta del trimestre, y se resuelve contra la carpeta de ficha que
+// revertirFecha ya recibe como parámetro (su padre es la carpeta del
+// trimestre, siempre — fichas:listar en ipc.js arma cada carpeta de ficha
+// como hija directa de carpetaTrimestre), nunca releyendo
+// configuracion.json: así, si el instructor cambia de trimestre en la
+// configuración entre generar y revertir, no afecta la resolución de una
+// ficha que ya tenía seleccionada.
+//
+// Migración de entradas viejas con ruta absoluta: ver revertir.js, se
+// hace de forma perezosa (solo cuando revertirFecha toca esa ficha), no
+// acá.
+function rutaRelativaSiCorresponde(rutaAbsoluta, carpetaTrimestre) {
+  const relativa = path.relative(carpetaTrimestre, rutaAbsoluta);
+  // path.relative() cruzando unidades en Windows devuelve la ruta absoluta
+  // del destino tal cual: !path.isAbsolute(relativa) descarta ese caso
+  // igual que descarta el prefijo "..": ambos significan "no está adentro".
+  const dentro = relativa && !relativa.startsWith("..") && !path.isAbsolute(relativa);
+  return dentro ? relativa : rutaAbsoluta; // fuera de la carpeta del trimestre: se deja como está
+}
+
+function resolverRutaEquipoEjecutor(ruta, carpetaTrimestre) {
+  if (!ruta) return null;
+  return path.isAbsolute(ruta) ? ruta : path.join(carpetaTrimestre, ruta);
+}
+
 // El horario suele traer el nombre del instructor recortado ("CARLOS JOSE
 // GREGORIO" en vez de "CARLOS JOSÉ GREGORIO CONTRERAS VIVAS"). Se considera
 // la misma persona si TODAS las palabras del nombre corto aparecen en el
@@ -130,15 +161,16 @@ async function prepararActaEquipoEjecutor(opciones, { simular = true } = {}) {
   // escribió la entrada en reg.equipoEjecutor[ficha], pero no conoce la
   // carpeta de salida ni el nombre del archivo (los decide quien la llama).
   // Se vuelve a abrir el registro para completar esa entrada con la ruta
-  // completa, que revertirFecha va a necesitar para borrar el archivo sin
-  // adivinar dónde quedó (paso 3, pendiente). Solo aplica a las actas
-  // nuevas: las que ya estaban en el registro se quedan sin este campo.
+  // (relativa a la carpeta del trimestre, ver arriba), que revertirFecha va
+  // a necesitar para borrar el archivo sin adivinar dónde quedó. Solo
+  // aplica a las actas nuevas: las que ya estaban en el registro se quedan
+  // sin este campo.
   const reg = cargarRegistro();
   const entrada = (reg.equipoEjecutor?.[String(horario.ficha)] || []).find(e => e.numero === numero);
-  if (entrada) entrada.ruta = rutaArchivo;
+  if (entrada) entrada.ruta = rutaRelativaSiCorresponde(rutaArchivo, path.dirname(opciones.carpetaSalida));
   guardarRegistro(reg);
 
   return { simulado: false, ficha: horario.ficha, programa: horario.programa, numero, archivo: nombreArchivo, avisos };
 }
 
-module.exports = { prepararActaEquipoEjecutor };
+module.exports = { prepararActaEquipoEjecutor, rutaRelativaSiCorresponde, resolverRutaEquipoEjecutor };

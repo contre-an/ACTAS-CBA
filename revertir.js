@@ -12,6 +12,7 @@ const PizZip = require("pizzip");
 const { cargarRegistro, guardarRegistro } = require("./generar");
 const { leerControl } = require("./procesar");
 const { resolverRutaRegistro } = require("./rutaRegistro");
+const { rutaRelativaSiCorresponde, resolverRutaEquipoEjecutor } = require("./equipo_ejecutor");
 
 function xmlEscape(s) {
   return String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
@@ -141,6 +142,13 @@ function revertirFecha(carpetaFicha, fecha, { simular = true } = {}) {
   const regOriginal = cargarRegistro();
   const reg = JSON.parse(JSON.stringify(regOriginal)); // se muta una copia; solo se persiste si simular=false
 
+  // Padre de la carpeta de ficha: SIEMPRE la carpeta del trimestre
+  // (fichas:listar en ipc.js arma cada carpeta de ficha como hija directa
+  // de carpetaTrimestre). Se deriva de carpetaFicha, nunca releyendo
+  // configuracion.json: así, si el instructor cambió de trimestre en la
+  // configuración entre generar y revertir, no afecta esta ficha concreta,
+  // que ya llegó resuelta como parámetro (ver equipo_ejecutor.js).
+  const carpetaTrimestre = path.dirname(carpetaFicha);
   const carpetaActas = path.join(carpetaFicha, "LLAMADOS DE ATENCION");
   // Ruta del .pdf ya convertido de un .docx, si existe. Se calcula desde ya
   // (también durante simular=true) para que la vista previa pueda decir
@@ -192,13 +200,29 @@ function revertirFecha(carpetaFicha, fecha, { simular = true } = {}) {
   if (Array.isArray(reg.equipoEjecutor?.[ficha])) {
     const quedan = [];
     for (const e of reg.equipoEjecutor[ficha]) {
-      if (e.fecha !== ddmmaaaa) { quedan.push(e); continue; }
-      equipoEjecutorRevertido.push({ numero: e.numero, fecha: e.fecha, ruta: e.ruta || null, pdf: e.ruta ? pdfSiExiste(e.ruta) : null });
-      // Actas de antes del paso 2 (que guarda la ruta): no hay dónde
-      // buscar el archivo. Se quita igual la entrada del registro, pero
-      // se avisa en vez de fallar en silencio o intentar adivinar.
-      if (!e.ruta)
-        avisos.push(`El acta de equipo ejecutor ${e.numero} (ficha ${ficha}, ${e.fecha}) no tiene guardada la ruta de su .docx: se quita del registro, pero hay que borrarlo a mano.`);
+      if (e.fecha !== ddmmaaaa) {
+        // Migración perezosa (no se toca nada más): si esta entrada de otra
+        // fecha quedó con ruta absoluta y cae dentro de la carpeta del
+        // trimestre actual, se convierte a relativa acá mismo. Se persiste
+        // solo si simular=false, con el guardarRegistro(reg) de más abajo.
+        if (e.ruta && path.isAbsolute(e.ruta)) e.ruta = rutaRelativaSiCorresponde(e.ruta, carpetaTrimestre);
+        quedan.push(e);
+        continue;
+      }
+      const rutaResuelta = resolverRutaEquipoEjecutor(e.ruta, carpetaTrimestre);
+      const rutaValida = rutaResuelta && fs.existsSync(rutaResuelta);
+      equipoEjecutorRevertido.push({ numero: e.numero, fecha: e.fecha, ruta: rutaValida ? rutaResuelta : null, pdf: rutaValida ? pdfSiExiste(rutaResuelta) : null });
+      // Dos casos distintos, cada uno con su propio aviso — ninguno en
+      // silencio, y los dos dicen qué hacer, no solo qué pasó:
+      if (!e.ruta) {
+        // Actas de antes del paso 2 (que empezó a guardar la ruta): no hay
+        // dónde buscar el archivo. Se quita igual la entrada del registro.
+        avisos.push(`El acta de equipo ejecutor ${e.numero} (ficha ${ficha}, ${e.fecha}) no tiene guardada la ruta de su .docx: se quita del registro, pero hay que localizarlo y borrarlo a mano si sigue en algún lado.`);
+      } else if (!rutaValida) {
+        // Sí había ruta (absoluta o relativa), pero ya no resuelve a nada:
+        // se movió, se renombró o se borró a mano por fuera de la app.
+        avisos.push(`El acta de equipo ejecutor ${e.numero} (ficha ${ficha}, ${e.fecha}) tenía guardada la ruta "${rutaResuelta}", que ya no existe (el .docx pudo haberse movido o borrado a mano): se quita del registro, pero hay que localizarlo y borrarlo a mano si sigue en algún lado.`);
+      }
     }
     if (quedan.length) reg.equipoEjecutor[ficha] = quedan;
     else delete reg.equipoEjecutor[ficha];
