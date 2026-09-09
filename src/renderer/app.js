@@ -340,18 +340,44 @@ el("btn-init-migrar").addEventListener("click", () => {
   });
 });
 
-// ===== Código de instructor (numeración compuesta de actas: 951210-XX-NNN) =====
+// ===== Activación por clave =====
+// El código de instructor (numeración compuesta de actas: 951210-XX-NNN)
+// ya no es un campo libre: sale de la activación, se muestra de solo
+// lectura en el header (#info-instructor) una vez activada la instalación.
 
-const inputCodigoInstructor = el("input-codigo-instructor");
-inputCodigoInstructor.addEventListener("change", async () => {
-  inputCodigoInstructor.value = await window.actas.guardarCodigoInstructor(inputCodigoInstructor.value);
+const overlayActivacion = el("overlay-activacion");
+const infoInstructor = el("info-instructor");
+const actError = el("act-error");
+
+function mostrarInfoInstructor(activacion) {
+  infoInstructor.textContent = `${activacion.nombre} (${activacion.codigoInstructor})`;
+}
+
+el("act-btn-activar").addEventListener("click", async () => {
+  actError.hidden = true;
+  const datos = {
+    nombre: el("act-nombre").value,
+    documento: el("act-documento").value,
+    correo: el("act-correo").value,
+    codigoInstructor: el("act-codigo").value,
+    clave: el("act-clave").value,
+  };
+  const r = await window.actas.activar(datos);
+  if (!r.ok) { actError.textContent = r.error; actError.hidden = false; return; }
+  // Más simple y más seguro que replicar acá todo lo que hace el arranque:
+  // recargar la ventana y dejar que arranque().
+  location.reload();
 });
 
 // ===== Arranque =====
 
-(async () => {
+async function arrancar() {
+  const estado = await window.actas.obtenerEstadoActivacion();
+  if (!estado.activado) { overlayActivacion.hidden = false; return; } // tapa TODO: nada más se carga hasta activar
+  mostrarInfoInstructor(estado.activacion);
+
   aplicarEstadoModoPrueba(await window.actas.obtenerModoPrueba());
   carpetaTrimestre = await window.actas.obtenerCarpetaTrimestre();
   if (carpetaTrimestre) { rutaTrimestreSpan.textContent = carpetaTrimestre; await cargarFichas(); }
-  inputCodigoInstructor.value = await window.actas.obtenerCodigoInstructor();
-})();
+}
+arrancar();

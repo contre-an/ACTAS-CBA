@@ -10,6 +10,11 @@ estado_ficha.json
 # Secretos (heredado del sistema anterior; no debería volver a aparecer)
 .env
 
+# Secretos del sistema de activación por clave (ver activacion.js). NUNCA
+# versionados: produccion.key es irrecuperable si se pierde sin respaldo
+# (ver README) y desarrollo.key se autogenera solo al correr "npm start".
+secretos/
+
 # SO
 Thumbs.db
 .DS_Store

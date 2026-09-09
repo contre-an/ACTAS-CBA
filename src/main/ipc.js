@@ -25,29 +25,58 @@ const { estadoNuevo, guardarEstado, cargarEstado } = requerir("estado");
 const { cargarConfiguracion, guardarConfiguracion } = require("./configuracion");
 const modoPrueba = require("./modoPrueba");
 const { resolverRutaRegistro, obtenerAvisoRegistro } = requerir("rutaRegistro");
+const activacion = requerir("activacion");
 
 const RUTA_PLANTILLA_MAESTRA = path.join(RAIZ, "PLANTILLA_MAESTRA_CONTROL_ASISTENCIA V3.xlsx");
 
 // Fija, antes de CUALQUIER acción que toque el registro o genere actas
 // numeradas, las variables de entorno que generar.js/revertir.js leen:
-// - ACTAS_CODIGO_INSTRUCTOR para el número compuesto (numeroActa() en generar.js).
+// - ACTAS_CODIGO_INSTRUCTOR para el número compuesto (numeroActa() en
+//   generar.js) — SOLO se fija si hay una activación válida ahora mismo
+//   (se recalcula el HMAC en cada llamado, ver activacion.estadoActivacion:
+//   punto 2 del encargo, no alcanza con haber activado alguna vez). Si no,
+//   se corta con un error ANTES de tocar nada: esta es la guarda dura del
+//   lado del proceso principal — la pantalla de activación del renderer es
+//   la primera línea, pero un renderer con devtools no debería poder
+//   saltearla, así que también se exige acá.
 // - ACTAS_REGISTRO_RUTA: con el modo prueba prendido, apunta a
 //   registro.pruebas.json (userData/modo_prueba/), NUNCA al registro.json
 //   real — es lo único que de verdad separa las dos cosas. Con el modo
 //   prueba apagado, se borra la variable y todo vuelve al registro.json de
 //   siempre.
 // Se relee la configuración en cada llamado, no solo al arrancar la app,
-// porque el instructor puede cambiar su código o el modo prueba sin
-// reiniciar la ventana.
+// porque la activación o el modo prueba pueden cambiar sin reiniciar la
+// ventana.
 function aplicarVariablesDeEntorno() {
   const config = cargarConfiguracion();
-  if (config.codigoInstructor) process.env.ACTAS_CODIGO_INSTRUCTOR = config.codigoInstructor;
-  else delete process.env.ACTAS_CODIGO_INSTRUCTOR;
+
+  const secreto = activacion.resolverSecreto();
+  const estado = activacion.estadoActivacion(config, secreto);
+  if (!estado.activado) {
+    delete process.env.ACTAS_CODIGO_INSTRUCTOR;
+    throw new Error("La aplicación no está activada (o la activación guardada ya no es válida). Recargá la ventana y activá con tu clave antes de continuar.");
+  }
+  process.env.ACTAS_CODIGO_INSTRUCTOR = estado.activacion.codigoInstructor;
 
   if (config.modoPrueba) process.env.ACTAS_REGISTRO_RUTA = modoPrueba.rutaRegistroPruebas();
   else delete process.env.ACTAS_REGISTRO_RUTA;
 
   avisarSobreRegistroSiHaceFalta();
+}
+
+// Envuelve aplicarVariablesDeEntorno() para los handlers que devuelven un
+// arreglo (uno por carpeta): si no hay activación válida, en vez de dejar
+// que el error tumbe la promesa de ipcMain.handle (el renderer no lo
+// esperaría en ese formato), se devuelve el mismo shape {carpeta, error}
+// que ya usa cada acción para un fallo individual, una entrada por carpeta.
+function prepararOFallarPorCarpeta(carpetas) {
+  try { aplicarVariablesDeEntorno(); return null; }
+  catch (e) { return carpetas.map(carpeta => ({ carpeta, error: e.message })); }
+}
+// Misma idea para los handlers de una sola carpeta.
+function prepararOFallar(carpeta) {
+  try { aplicarVariablesDeEntorno(); return null; }
+  catch (e) { return { carpeta, error: e.message }; }
 }
 
 // Diálogo nativo, una sola vez por sesión de la app: rutaRegistro.js resuelve
@@ -125,12 +154,22 @@ ipcMain.handle("config:elegir-carpeta-trimestre", async () => {
   return carpeta;
 });
 
-ipcMain.handle("config:obtener-codigo-instructor", () => cargarConfiguracion().codigoInstructor || "");
+// ===== Activación por clave (ver activacion.js) =====
+// El código de instructor YA NO es un campo libre editable en cualquier
+// momento: queda fijado, junto con el nombre validado contra la clave, en
+// configuracion.json.activacion — se escribe una sola vez al activar
+// (activacion:activar) y de ahí en más solo se lee.
 
-ipcMain.handle("config:guardar-codigo-instructor", (_e, codigo) => {
-  const limpio = String(codigo ?? "").replace(/\D/g, "").slice(0, 2).padStart(2, "0");
-  guardarConfiguracion({ ...cargarConfiguracion(), codigoInstructor: limpio });
-  return limpio;
+ipcMain.handle("activacion:estado", () => {
+  const secreto = activacion.resolverSecreto();
+  return activacion.estadoActivacion(cargarConfiguracion(), secreto);
+});
+
+ipcMain.handle("activacion:activar", (_e, datos) => {
+  const secreto = activacion.resolverSecreto();
+  const resultado = activacion.intentarActivar(datos, secreto);
+  if (resultado.ok) guardarConfiguracion({ ...cargarConfiguracion(), activacion: resultado.activacion });
+  return resultado;
 });
 
 // ===== Fichas: listar subcarpetas del trimestre, leer su estado básico =====
@@ -181,7 +220,8 @@ ipcMain.handle("ficha:estado", (_e, carpeta) => {
 // sistema mirando el historial, no la elige quien aprieta el botón) =====
 
 ipcMain.handle("actas:generar", (_e, carpetas, opciones) => {
-  aplicarVariablesDeEntorno();
+  const fallo = prepararOFallarPorCarpeta(carpetas);
+  if (fallo) return fallo;
   const { simular } = opciones;
   return carpetas.map(carpeta => {
     try {
@@ -194,7 +234,8 @@ ipcMain.handle("actas:generar", (_e, carpetas, opciones) => {
 // ===== Acta de entrega de ficha =====
 
 ipcMain.handle("entrega:generar", (_e, carpetas, opciones) => {
-  aplicarVariablesDeEntorno();
+  const fallo = prepararOFallarPorCarpeta(carpetas);
+  if (fallo) return fallo;
   const { simular } = opciones;
   return carpetas.map(carpeta => {
     try {
@@ -212,8 +253,9 @@ ipcMain.handle("equipoEjecutor:elegirHorario", async () => {
 });
 
 ipcMain.handle("equipoEjecutor:generar", async (_e, opciones) => {
-  aplicarVariablesDeEntorno();
   const { carpeta, rutaHorarioPdf, horaInicio, horaFin, fecha, lugar, sintesis, simular } = opciones;
+  const fallo = prepararOFallar(carpeta);
+  if (fallo) return fallo;
   try {
     const rutaControl = buscarControlEnCarpeta(carpeta);
     const resultado = await prepararActaEquipoEjecutor(
@@ -239,7 +281,8 @@ ipcMain.handle("pdf:convertir", (_e, carpetas, opciones) => {
 // ===== Revertir =====
 
 ipcMain.handle("revertir:ejecutar", (_e, carpeta, fecha, opciones) => {
-  aplicarVariablesDeEntorno();
+  const fallo = prepararOFallar(carpeta);
+  if (fallo) return fallo;
   const { simular } = opciones;
   try { return { carpeta, resultado: revertirFecha(carpeta, fecha, { simular }) }; }
   catch (e) { return { carpeta, error: e.message }; }

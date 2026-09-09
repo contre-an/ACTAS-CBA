@@ -33,6 +33,7 @@
       "procesar.js",
       "generar.js",
       "rutaRegistro.js",
+      "activacion.js",
       "estado.js",
       "revertir.js",
       "horario.js",
@@ -43,6 +44,9 @@
       "PLANTILLA_MAESTRA_CONTROL_ASISTENCIA V3.xlsx",
       "package.json",
       "node_modules/**/*"
+    ],
+    "extraResources": [
+      { "from": "secretos/produccion.key", "to": "secreto_activacion.key" }
     ],
     "win": {
       "target": "nsis"

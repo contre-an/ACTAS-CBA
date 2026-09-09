@@ -7,6 +7,22 @@
 </head>
 <body>
 
+<div id="overlay-activacion" class="overlay-activacion" hidden>
+  <div class="activacion-caja">
+    <h2>Activar Actas CBA</h2>
+    <p class="ayuda">Esta instalación necesita una clave de activación antes de poder generar actas. Pedísela a Carlos por teléfono junto con tu código de instructor.</p>
+    <div class="formulario">
+      <label>Nombre completo <input id="act-nombre" type="text" autocomplete="off"></label>
+      <label>Documento <input id="act-documento" type="text" autocomplete="off"></label>
+      <label>Correo institucional <input id="act-correo" type="email" autocomplete="off"></label>
+      <label>Código de instructor <input id="act-codigo" type="text" inputmode="numeric" maxlength="2" placeholder="05"></label>
+      <label>Clave <input id="act-clave" type="text" autocomplete="off" placeholder="A3F9-2B7E-C401-88DA"></label>
+      <p id="act-error" class="error-texto" hidden></p>
+      <button id="act-btn-activar" class="principal">Activar</button>
+    </div>
+  </div>
+</div>
+
 <header>
   <h1>Actas CBA</h1>
   <div class="carpeta-trimestre">
@@ -14,9 +30,7 @@
       <input type="checkbox" id="chk-modo-prueba">
       Modo prueba
     </label>
-    <label class="codigo-instructor">Código instructor
-      <input id="input-codigo-instructor" type="text" inputmode="numeric" maxlength="2" placeholder="00">
-    </label>
+    <span id="info-instructor" class="info-instructor"></span>
     <span id="ruta-trimestre">Sin carpeta del trimestre seleccionada</span>
     <button id="btn-cambiar-carpeta">Elegir carpeta del trimestre…</button>
   </div>

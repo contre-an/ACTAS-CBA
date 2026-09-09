@@ -9,8 +9,9 @@ const invocar = canal => (...args) => ipcRenderer.invoke(canal, ...args);
 contextBridge.exposeInMainWorld("actas", {
   obtenerCarpetaTrimestre: invocar("config:obtener-carpeta-trimestre"),
   elegirCarpetaTrimestre: invocar("config:elegir-carpeta-trimestre"),
-  obtenerCodigoInstructor: invocar("config:obtener-codigo-instructor"),
-  guardarCodigoInstructor: invocar("config:guardar-codigo-instructor"),
+
+  obtenerEstadoActivacion: invocar("activacion:estado"),
+  activar: invocar("activacion:activar"),
 
   obtenerModoPrueba: invocar("modoPrueba:obtener"),
   alternarModoPrueba: invocar("modoPrueba:alternar"),

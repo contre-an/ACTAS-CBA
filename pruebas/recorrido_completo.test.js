@@ -25,6 +25,12 @@ const PizZip = require("pizzip");
 
 const CARPETA = path.join(__dirname, "tmp", "recorrido");
 process.env.ACTAS_REGISTRO_RUTA = path.join(CARPETA, "registro.json");
+// numeroActa() (generar.js) ya no tiene default: sin esto, activado por
+// ipc.js solo con una activación válida (ver activacion.js), cualquier
+// generarActa() de esta prueba lanzaría error. El valor "00" es el mismo
+// que salía por default antes de ese cambio, así que ningún número de acta
+// que ya afirma esta prueba se mueve.
+process.env.ACTAS_CODIGO_INSTRUCTOR = "00";
 
 const { leerReporteSofia, poblarAprendices } = require("../sofia");
 const { procesarControl, leerControl } = require("../procesar");

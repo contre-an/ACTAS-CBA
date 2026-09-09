@@ -12,19 +12,28 @@ const MESES = ["enero","febrero","marzo","abril","mayo","junio","julio","agosto"
 
 // ===== Numeración compuesta de actas: 951210-XX-NNN =====
 // 951210 = código del Centro de Biotecnología Agropecuaria, fijo.
-// XX = código corto del instructor (2 dígitos) — sale de la configuración
-//   de la app (ACTAS_CODIGO_INSTRUCTOR, igual patrón que ACTAS_REGISTRO_RUTA:
-//   el proceso principal de Electron lo fija antes de llamar a estas
-//   funciones, leyéndolo de configuracion.json). Todavía NO va en
-//   PARAMETROS a propósito — queda fácil de mover ahí más adelante, este es
-//   el único lugar donde habría que tocar el formato.
+// XX = código corto del instructor (2 dígitos) — sale de la activación por
+//   clave (ver activacion.js: configuracion.json.activacion.codigoInstructor,
+//   validado contra la clave que yo emití). ipc.js lo fija en
+//   ACTAS_CODIGO_INSTRUCTOR (mismo patrón que ACTAS_REGISTRO_RUTA) SOLO si
+//   la activación guardada sigue siendo válida; si no, ninguna de estas
+//   funciones se llega a llamar. Todavía NO va en PARAMETROS a propósito —
+//   queda fácil de mover ahí más adelante, este es el único lugar donde
+//   habría que tocar el formato.
 // NNN = el consecutivo PROPIO de esa instalación (reg.consecutivo),
 //   siempre desde 001. Cada instalación numera independientemente: el
 //   identificador completo nunca se repite dentro del centro porque el
 //   código de instructor es distinto en cada una.
 const CODIGO_CENTRO = "951210";
 function numeroActa(consecutivo) {
-  const codigoInstructor = String(process.env.ACTAS_CODIGO_INSTRUCTOR ?? "00").padStart(2, "0").slice(-2);
+  // Sin default "00": sin ACTAS_CODIGO_INSTRUCTOR (que ipc.js solo fija si
+  // hay una activación válida, ver activacion.js) no se numera nada — la
+  // guarda real está antes, en ipc.js, pero esto es la red de seguridad
+  // para que ningún llamado directo (una prueba, un script) numere en
+  // silencio con un código que nadie activó.
+  if (!process.env.ACTAS_CODIGO_INSTRUCTOR)
+    throw new Error("ACTAS_CODIGO_INSTRUCTOR no está definido: no se puede numerar un acta sin un código de instructor.");
+  const codigoInstructor = String(process.env.ACTAS_CODIGO_INSTRUCTOR).padStart(2, "0").slice(-2);
   return `${CODIGO_CENTRO}-${codigoInstructor}-${String(consecutivo).padStart(3, "0")}`;
 }
 

@@ -37,8 +37,7 @@ header {
 header h1 { font-size: 18px; margin: 0; }
 .carpeta-trimestre { display: flex; align-items: center; gap: 10px; font-size: 13px; color: var(--texto-suave); }
 #ruta-trimestre { max-width: 480px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.codigo-instructor { display: flex; align-items: center; gap: 6px; }
-.codigo-instructor input { width: 2.6em; text-align: center; padding: 5px; border-radius: 6px; border: 1px solid var(--borde); font: inherit; }
+.info-instructor { font-weight: 600; }
 
 .interruptor-modo-prueba { display: flex; align-items: center; gap: 6px; font-weight: 600; }
 .interruptor-modo-prueba input { width: 16px; height: 16px; }
@@ -116,6 +115,19 @@ summary { cursor: pointer; font-weight: 600; }
 .modal h2 { margin-top: 0; }
 .modal-contenido { overflow-y: auto; flex: 1; margin-bottom: 14px; }
 .modal-botones { display: flex; justify-content: flex-end; gap: 10px; }
+
+.overlay-activacion {
+  position: fixed; inset: 0; background: rgba(0,0,0,0.65);
+  display: flex; align-items: center; justify-content: center;
+  z-index: 100; /* por encima de .modal-overlay (10): tapa TODO, sin excepción */
+}
+/* Mismo motivo que .modal-overlay[hidden]: una clase con display:flex le
+   gana en especificidad al [hidden]{display:none} del navegador. */
+.overlay-activacion[hidden] { display: none; }
+.activacion-caja { background: var(--panel); border-radius: 8px; padding: 24px; width: 420px; max-height: 90vh; overflow-y: auto; }
+.activacion-caja h2 { margin-top: 0; }
+.activacion-caja .formulario { max-width: none; }
+.activacion-caja button { width: 100%; margin-top: 4px; }
 
 footer.credito {
   text-align: center;
