@@ -342,7 +342,12 @@ ipcMain.handle("inicializar:crearControl", (_e, { nombreCarpeta }) => {
     const estado = activacion.estadoActivacion(cargarConfiguracion(), activacion.resolverSecreto());
     if (estado.activado) establecerParametrosInstructor(rutaControl, estado.activacion);
 
-    shell.openPath(rutaControl); // el instructor llena el resto de PARAMETROS a mano, en Excel
+    // ACTAS_SIN_ABRIR_EXCEL: mismo patrón que ACTAS_REGISTRO_RUTA
+    // (generar.js) — variable que SOLO fija la prueba automatizada de
+    // Playwright, para no dejar una instancia real de Excel abierta (y
+    // bloqueando el archivo) al final de cada corrida. En producción nunca
+    // está fijada: Excel se abre exactamente igual que siempre.
+    if (!process.env.ACTAS_SIN_ABRIR_EXCEL) shell.openPath(rutaControl); // el instructor llena el resto de PARAMETROS a mano, en Excel
     return {
       carpetaFicha, rutaControl,
       aviso: carpetaYaExistia ? `La carpeta "${nombreCarpeta}" ya existía en la carpeta del trimestre: se usó tal cual, no es una carpeta nueva.` : null,
