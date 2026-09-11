@@ -401,6 +401,11 @@ el("act-btn-activar").addEventListener("click", async () => {
 // ===== Arranque =====
 
 async function arrancar() {
+  // Antes que nada, incluso sin activar: si un compañero reporta un
+  // problema, hace falta saber qué versión tiene (con autoactualización
+  // activa, no todos están en la misma).
+  el("version-app").textContent = "v" + await window.actas.obtenerVersion();
+
   const estado = await window.actas.obtenerEstadoActivacion();
   if (!estado.activado) { overlayActivacion.hidden = false; return; } // tapa TODO: nada más se carga hasta activar
   mostrarInfoInstructor(estado.activacion);

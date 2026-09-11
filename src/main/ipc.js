@@ -8,7 +8,7 @@
 // formato de "vista previa" distinto del real: es la misma función, con
 // simular:true o simular:false. Así la interfaz siempre muestra la verdad
 // de lo que pasaría.
-const { ipcMain, dialog, shell } = require("electron");
+const { ipcMain, dialog, shell, app } = require("electron");
 const fs = require("fs");
 const path = require("path");
 
@@ -28,6 +28,12 @@ const { resolverRutaRegistro, obtenerAvisoRegistro } = requerir("rutaRegistro");
 const activacion = requerir("activacion");
 
 const RUTA_PLANTILLA_MAESTRA = path.join(RAIZ, "PLANTILLA_MAESTRA_CONTROL_ASISTENCIA V3.xlsx");
+
+// Para que se vea en la interfaz qué versión tiene instalada cada
+// instructor (con autoactualización activa, un compañero que reporta un
+// problema puede estar en cualquier versión publicada) — sin gatear por
+// activación: útil verla incluso antes de activar.
+ipcMain.handle("app:version", () => app.getVersion());
 
 // Fija, antes de CUALQUIER acción que toque el registro o genere actas
 // numeradas, las variables de entorno que generar.js/revertir.js leen:

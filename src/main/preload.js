@@ -7,6 +7,8 @@ const { contextBridge, ipcRenderer } = require("electron");
 const invocar = canal => (...args) => ipcRenderer.invoke(canal, ...args);
 
 contextBridge.exposeInMainWorld("actas", {
+  obtenerVersion: invocar("app:version"),
+
   obtenerCarpetaTrimestre: invocar("config:obtener-carpeta-trimestre"),
   elegirCarpetaTrimestre: invocar("config:elegir-carpeta-trimestre"),
 
