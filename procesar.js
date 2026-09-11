@@ -7,15 +7,25 @@ const { generarActa, generarActaEntrega, cargarRegistro, guardarRegistro, resume
 
 const fechaHoy = () => { const d = new Date(); return `${d.getFullYear()}/${String(d.getMonth()+1).padStart(2,"0")}/${String(d.getDate()).padStart(2,"0")}`; };
 const norm = s => String(s ?? "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/\s+/g, " ").trim().toUpperCase();
+// La plantilla deja el campo as\u00ed (p.ej. "(N\u00daMERO DE FICHA)") cuando el
+// instructor todav\u00eda no lo llen\u00f3: es un valor truthy, as\u00ed que un chequeo de
+// "no vac\u00edo" no lo detecta. Ver PLANTILLA_MAESTRA_CONTROL_ASISTENCIA V3.xlsx.
+const esPlaceholder = v => /^\(.*\)$/.test(String(v ?? "").trim());
 
-// El documento y el correo del instructor los escribe el instructor a mano en
-// PARAMETROS; si falta alguno, el acta sale incompleta y es f\u00e1cil no darse
-// cuenta hasta despu\u00e9s de firmar. Se avisa en la vista previa (y tambi\u00e9n en
-// la generaci\u00f3n real, por si se salt\u00f3 la vista previa).
-function avisosInstructor(instructor) {
+// Campos que el instructor puede dejar sin llenar y el acta sale igual
+// (incompleta en esos datos, pero generable): a diferencia de FICHA,
+// PROGRAMA, COMPETENCIA e INSTRUCTOR (ver camposObligatorios en
+// leerControl), estos no bloquean la generaci\u00f3n, solo se avisan. Vac\u00edo O
+// con el texto de ejemplo de la plantilla (ver esPlaceholder) cuentan igual
+// como "sin llenar". Se avisa en la vista previa (y tambi\u00e9n en la
+// generaci\u00f3n real, por si se salt\u00f3 la vista previa).
+function avisosConfiguracion(params) {
   const avisos = [];
-  if (!instructor.documento) avisos.push("Falta el documento del instructor en PARAMETROS: el acta saldr\u00e1 incompleta.");
-  if (!instructor.correo) avisos.push("Falta el correo del instructor en PARAMETROS: el acta saldr\u00e1 incompleta.");
+  const faltante = v => !v || esPlaceholder(v);
+  if (faltante(params.regional)) avisos.push("Falta REGIONAL en PARAMETROS: el acta saldr\u00e1 incompleta.");
+  if (faltante(params.centro)) avisos.push("Falta CENTRO en PARAMETROS: el acta saldr\u00e1 incompleta.");
+  if (faltante(params.instructor.documento)) avisos.push("Falta el documento del instructor en PARAMETROS: el acta saldr\u00e1 incompleta.");
+  if (faltante(params.instructor.correo)) avisos.push("Falta el correo del instructor en PARAMETROS: el acta saldr\u00e1 incompleta.");
   return avisos;
 }
 
@@ -43,7 +53,9 @@ const fmt = d => `${String(d.getDate()).padStart(2,"0")}/${String(d.getMonth()+1
 const iso = d => `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`;
 
 function leerControl(ruta) {
-  const wb = XLSX.readFile(ruta, { cellDates: true });
+  let wb;
+  try { wb = XLSX.readFile(ruta, { cellDates: true }); }
+  catch (e) { throw new Error(`No se pudo abrir "${path.basename(ruta)}": ${e.message}. Si tienes el archivo abierto en Excel, ciérralo y vuelve a generar.`); }
   const hoja = n => {
     const real = wb.SheetNames.find(s => norm(s) === n);
     if (!real) throw new Error(`El archivo no tiene la hoja ${n}: ${path.basename(ruta)}`);
@@ -68,7 +80,26 @@ function leerControl(ruta) {
     coordinador: P["COORDINADOR ACADEMICO"] || "",
     codigoCompetencia: P["CODIGO COMPETENCIA"] || "",
   };
-  if (!params.ficha || !params.programa) throw new Error(`PARAMETROS incompletos (FICHA/PROGRAMA) en ${path.basename(ruta)}`);
+  // Estos cuatro van impresos en el acta o determinan su identidad (número
+  // de ficha, título, competencia, quién firma como instructor): si alguno
+  // quedó vacío o con el texto de ejemplo de la plantilla (ver
+  // esPlaceholder), NO se genera nada — a diferencia de REGIONAL, CENTRO,
+  // documento y correo del instructor (avisosConfiguracion), que solo
+  // avisan. El mensaje aclara a propósito que es un control sin terminar
+  // de configurar, no un archivo dañado: este error también aparece en el
+  // panel de estado de la ficha (ficha:estado en ipc.js), donde una ficha
+  // todavía en montaje no debe leerse como si tuviera un problema real.
+  const camposObligatorios = [
+    ["FICHA", params.ficha], ["PROGRAMA DE FORMACIÓN", params.programa],
+    ["COMPETENCIA", params.competencia], ["INSTRUCTOR", params.instructor.nombre],
+  ];
+  const sinLlenar = camposObligatorios.filter(([, v]) => !v || esPlaceholder(v)).map(([campo]) => campo);
+  if (sinLlenar.length) throw new Error(
+    `Control sin terminar de configurar (${path.basename(ruta)}) — no es un archivo dañado: falta completar en PARAMETROS ${sinLlenar.join(", ")}.`
+  );
+  if (!/^\d+$/.test(String(params.ficha).trim())) throw new Error(
+    `Control sin terminar de configurar (${path.basename(ruta)}) — no es un archivo dañado: FICHA debe ser solo números en PARAMETROS (se encontró "${params.ficha}").`
+  );
 
   const apr = hoja("APRENDICES"), asi = hoja("ASISTENCIA"), not_ = hoja("NOTAS");
   const sesiones = [];
@@ -195,7 +226,7 @@ function procesarControl(ruta, forzar = false, simular = false) {
   }
   const carpetaActas = path.join(path.dirname(ruta), "LLAMADOS DE ATENCION");
   const resumen = { archivo: path.basename(ruta), ficha: params.ficha, programa: params.programa,
-                    casos: [], sinNovedad: 0, omitidos: [], errores: [], avisos: avisosInstructor(params.instructor) };
+                    casos: [], sinNovedad: 0, omitidos: [], errores: [], avisos: avisosConfiguracion(params) };
 
   for (const a of aprendices) {
     // Filtro por estado: solo EN FORMACION recibe llamados de atencion.
@@ -294,7 +325,7 @@ function procesarControl(ruta, forzar = false, simular = false) {
       ap2.retardosPendientes = sobrantes.map(iso);
       reg2.aprendices[clave] = ap2; guardarRegistro(reg2);
 
-      resumen.casos.push({ aprendiz: a.nombre, documento: a.documento, medida: tipo, acta: numero, archivo: nombreArchivo, motivos: incidentes.length, historico: histOk ? "registrado" : "PENDIENTE (cierra el Excel y reprocesa)", ...(avisos.length ? { avisos } : {}) });
+      resumen.casos.push({ aprendiz: a.nombre, documento: a.documento, medida: tipo, acta: numero, archivo: nombreArchivo, motivos: incidentes.length, historico: histOk ? "registrado" : `PENDIENTE: no se pudo registrar en HISTORICO de "${path.basename(ruta)}" — ciérralo en Excel y reprocesa.`, ...(avisos.length ? { avisos } : {}) });
     } catch (e) {
       if (e.codigo === "EN_COMITE") resumen.casos.push({ aprendiz: a.nombre, documento: a.documento, medida: "YA EN COMITÉ (sin documentos nuevos)", detalle: e.message });
       else resumen.errores.push(`${a.nombre}: ${e.message}`);
@@ -355,7 +386,7 @@ function generarEntregaControl(ruta, simular = false) {
     return { archivo: path.basename(ruta), ficha: params.ficha, programa: params.programa,
              omitida: true, mensaje: "OMITIDA (GENERAR ACTA DE ENTREGA = NO o ausente)" };
   }
-  const avisos = avisosInstructor(params.instructor);
+  const avisos = avisosConfiguracion(params);
   const reg = cargarRegistro();
   const conteo = {};
   const evaluados = [], noEvaluados = [];
@@ -423,7 +454,7 @@ function generarEntregaControl(ruta, simular = false) {
   return { archivo: path.basename(ruta), ficha: params.ficha, programa: params.programa,
            casos: [{ aprendiz: "ENTREGA DE FICHA", medida: "ACTA DE ENTREGA", acta: numero, archivo: nombreArchivo,
                      evaluados: evaluados.length, no_evaluados: noEvaluados.length,
-                     historico: histOk ? "registrado" : "PENDIENTE (cierra el Excel y reprocesa)",
+                     historico: histOk ? "registrado" : `PENDIENTE: no se pudo registrar en HISTORICO de "${path.basename(ruta)}" — ciérralo en Excel y reprocesa.`,
                      ...(avisos.length ? { avisos } : {}) }],
            sinNovedad: 0, errores: [] };
 }

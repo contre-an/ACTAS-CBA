@@ -196,6 +196,7 @@ function renderizarResumenActas(resumen) {
   } else {
     partes.push("<p><em>Sin novedades: no se generó ninguna acta.</em></p>");
   }
+  if (resumen.sinNovedad) partes.push(`<p>${resumen.sinNovedad} aprendiz(ces) evaluado(s) sin novedades nuevas.</p>`);
   if (resumen.omitidos?.length) partes.push(`<p>${resumen.omitidos.length} aprendiz(ces) omitido(s) por su estado.</p>`);
   if (resumen.errores?.length) partes.push(`<p class="error-texto">${resumen.errores.map(escapeHtml).join("<br>")}</p>`);
   return partes.join("");

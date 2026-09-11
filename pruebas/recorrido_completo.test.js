@@ -589,3 +589,72 @@ test("recorrido completo, ficha ficticia 9000001", async t => {
     fs.rmSync(rutaPdfBloqueado, { recursive: true, force: true });
   });
 });
+
+// ===== Validación de PARAMETROS sin llenar (arreglo del turno: la app no
+// debe generar nada bajo una ficha/programa/competencia/instructor que
+// sigan siendo el texto de ejemplo de la plantilla) =====
+// Carpeta propia, aparte de CARPETA: solo se necesita la hoja PARAMETROS,
+// nunca se llega a leer APRENDICES/ASISTENCIA/NOTAS ni a generar nada.
+test("validación de PARAMETROS: la plantilla sin llenar no genera nada", async t => {
+  const CARPETA_VAL = path.join(__dirname, "tmp", "validacion_parametros");
+  fs.rmSync(CARPETA_VAL, { recursive: true, force: true });
+  fs.mkdirSync(CARPETA_VAL, { recursive: true });
+
+  await t.test("1. plantilla recién copiada, sin tocar PARAMETROS -> rechaza FICHA/PROGRAMA/COMPETENCIA sin llenar", () => {
+    const ruta = path.join(CARPETA_VAL, "CONTROL_ASISTENCIA_SIN_LLENAR.xlsx");
+    fs.copyFileSync(RUTA_PLANTILLA, ruta);
+    // INSTRUCTOR ya trae un valor real por defecto en la plantilla maestra
+    // (es la plantilla personal del instructor): solo FICHA/PROGRAMA/
+    // COMPETENCIA siguen como texto de ejemplo entre paréntesis.
+    assert.throws(() => leerControl(ruta), (e) => {
+      assert.match(e.message, /Control sin terminar de configurar/);
+      assert.match(e.message, /no es un archivo dañado/);
+      assert.match(e.message, /FICHA/);
+      assert.match(e.message, /PROGRAMA DE FORMACIÓN/);
+      assert.match(e.message, /COMPETENCIA/);
+      assert.doesNotMatch(e.message, /INSTRUCTOR/, "INSTRUCTOR ya viene lleno en la plantilla: no debe salir en la lista de faltantes");
+      return true;
+    });
+  });
+
+  await t.test("2. FICHA con texto no numérico se rechaza aunque el resto esté lleno", () => {
+    const ruta = path.join(CARPETA_VAL, "CONTROL_ASISTENCIA_FICHA_INVALIDA.xlsx");
+    fs.copyFileSync(RUTA_PLANTILLA, ruta);
+    establecerParametros(ruta, {
+      "FICHA": "9000001-A",
+      "PROGRAMA DE FORMACIÓN": "TECNICO DE PRUEBA (FICTICIO)",
+      "COMPETENCIA": "COMPETENCIA DE PRUEBA",
+    });
+    assert.throws(() => leerControl(ruta), (e) => {
+      assert.match(e.message, /Control sin terminar de configurar/);
+      assert.match(e.message, /FICHA debe ser solo números/);
+      assert.match(e.message, /9000001-A/);
+      return true;
+    });
+  });
+
+  await t.test("3. REGIONAL/CENTRO/documento/correo del instructor sin llenar NO bloquean: solo avisan", () => {
+    const ruta = path.join(CARPETA_VAL, "CONTROL_ASISTENCIA_SOLO_AVISOS.xlsx");
+    fs.copyFileSync(RUTA_PLANTILLA, ruta);
+    establecerParametros(ruta, {
+      "FICHA": 9000099,
+      "PROGRAMA DE FORMACIÓN": "TECNICO DE PRUEBA (FICTICIO)",
+      "COMPETENCIA": "COMPETENCIA DE PRUEBA",
+      "REGIONAL": "(REGIONAL)",
+      "CENTRO": "",
+      "DOCUMENTO INSTRUCTOR": "",
+      "CORREO INSTRUCTOR": "(CORREO)",
+      "PROCESAR EN AUTOMATIZACIÓN": "SI",
+    });
+    // simular:true -> no toca archivos ni registro; alcanza para leer avisos.
+    const resumen = procesarControl(ruta, false, true);
+    assert.equal(resumen.omitida, undefined, "con PROCESAR = SI no debe tratarse como ficha sin procesar");
+    const avisos = resumen.avisos.join(" | ");
+    assert.match(avisos, /REGIONAL/);
+    assert.match(avisos, /CENTRO/);
+    assert.match(avisos, /documento del instructor/);
+    assert.match(avisos, /correo del instructor/);
+  });
+
+  fs.rmSync(CARPETA_VAL, { recursive: true, force: true });
+});
