@@ -631,3 +631,34 @@ aprobación. Estado actual por función:
     nativo de cerrar (X) de Windows sigue ahí y sí cierra la app
     (`window-all-closed` → `app.quit()`), pero no hay ninguna acción de
     salida dentro de la propia interfaz (`index.html`/`app.js`).
+13. **Restaurar un respaldo viejo de `registro.json` puede duplicar
+    llamados y reutilizar números de acta** — anotado, sin implementar.
+    Con el respaldo en la carpeta del trimestre ya resuelto (ver
+    `respaldarRegistroEnTrimestre`, `rutaRegistro.js`), queda este hueco
+    aparte, deliberadamente no bloqueado por eso: si se restaura un
+    respaldo más viejo que la última generación real, `procesarControl`
+    puede volver a generar llamados que ya existen como `.docx` reales
+    (mismo mecanismo que cubre
+    `pruebas/regresion_reapertura.test.js`, pero disparado por un
+    registro desactualizado, no por `FICHA` sin validar), y la siguiente
+    acta puede numerarse con un consecutivo que ya está estampado en un
+    documento real distinto.
+
+    `recalcularConsecutivo` (`revertir.js:111`) no alcanza a resolver
+    esto: recalcula el máximo mirando *solo lo que hay dentro del propio
+    objeto `reg`* (historial de cada aprendiz, entregas, equipo
+    ejecutor). Si el registro restaurado no tiene una entrada porque es
+    de antes de que esa acta se generara, ese número nunca entra al
+    cálculo — `recalcularConsecutivo` sigue sin saber que está en uso.
+
+    Lo que haría falta: una herramienta de reconciliación que, después de
+    restaurar, cruce el registro contra la VERDAD del disco — los
+    nombres de los `.docx` de cada ficha (llevan el número de acta y el
+    tipo) y las filas de la hoja HISTORICO de cada control — para
+    reconstruir `consecutivo` y el `historial`/`llamados` de cada
+    aprendiz contra lo que de verdad existe, no contra lo que el
+    registro restaurado cree que existe. No construida todavía.
+    `LEEME_RESPALDO.txt` (el mismo archivo que explica el respaldo, junto
+    a él en la carpeta del trimestre) ya advierte de este riesgo antes de
+    generar nada nuevo después de restaurar, mientras esta herramienta no
+    exista.

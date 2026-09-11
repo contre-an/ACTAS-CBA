@@ -4,6 +4,7 @@ const path = require("path");
 const XLSX = require("xlsx");
 const PizZip = require("pizzip");
 const { generarActa, generarActaEntrega, cargarRegistro, guardarRegistro, resumenMotivos } = require("./generar");
+const { respaldarRegistroEnTrimestre } = require("./rutaRegistro");
 
 const fechaHoy = () => { const d = new Date(); return `${d.getFullYear()}/${String(d.getMonth()+1).padStart(2,"0")}/${String(d.getDate()).padStart(2,"0")}`; };
 const norm = s => String(s ?? "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/\s+/g, " ").trim().toUpperCase();
@@ -457,6 +458,10 @@ function procesarControl(ruta, forzar = false, simular = false) {
       else resumen.errores.push(`${a.nombre}: ${e.message}`);
     }
   }
+  if (!simular) {
+    const avisoRespaldo = respaldarRegistroEnTrimestre(path.dirname(path.dirname(ruta)));
+    if (avisoRespaldo) resumen.avisos.push(avisoRespaldo);
+  }
   return resumen;
 }
 
@@ -577,6 +582,10 @@ function generarEntregaControl(ruta, simular = false) {
   try {
     registrarEnHistorico(ruta, [fechaHoy(), "-", "TODA LA FICHA", "ACTA DE ENTREGA DE FICHA", `Entrega de la competencia ${params.competencia}`, numero]);
   } catch (e) { histOk = false; }
+  // generarActaEntrega() ya guardó el registro (ver generar.js): respaldar
+  // acá, después de esa escritura real, nunca en la rama "simular" de arriba.
+  const avisoRespaldo = respaldarRegistroEnTrimestre(path.dirname(path.dirname(ruta)));
+  if (avisoRespaldo) avisos.push(avisoRespaldo);
   return { archivo: path.basename(ruta), ficha: params.ficha, programa: params.programa,
            casos: [{ aprendiz: "ENTREGA DE FICHA", medida: "ACTA DE ENTREGA", acta: numero, archivo: nombreArchivo,
                      evaluados: evaluados.length, no_evaluados: noEvaluados.length,

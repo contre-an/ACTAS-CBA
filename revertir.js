@@ -11,7 +11,7 @@ const path = require("path");
 const PizZip = require("pizzip");
 const { cargarRegistro, guardarRegistro } = require("./generar");
 const { leerControl } = require("./procesar");
-const { resolverRutaRegistro } = require("./rutaRegistro");
+const { resolverRutaRegistro, respaldarRegistroEnTrimestre } = require("./rutaRegistro");
 const { rutaRelativaSiCorresponde, resolverRutaEquipoEjecutor } = require("./equipo_ejecutor");
 
 function xmlEscape(s) {
@@ -315,6 +315,9 @@ function revertirFecha(carpetaFicha, fecha, { simular = true } = {}) {
     throw new Error(`No se pudo confirmar el borrado de: ${reporte.archivosNoBorrados.join("; ")}. ¿Alguno está abierto en Word/Excel? El registro NO se modificó; los respaldos ya están hechos: ${reporte.respaldos.join(", ")}`);
 
   guardarRegistro(reg);
+
+  const avisoRespaldo = respaldarRegistroEnTrimestre(carpetaTrimestre);
+  if (avisoRespaldo) avisos.push(avisoRespaldo);
 
   return reporte;
 }

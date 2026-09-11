@@ -12,6 +12,7 @@ const path = require("path");
 const { leerHorario, resumenInstructores } = require("./horario");
 const { leerControl, norm, evaluarAprendiz, recibeLlamado, categoriaDe, CATEGORIAS } = require("./procesar");
 const { generarActaEquipoEjecutor, cargarRegistro, guardarRegistro } = require("./generar");
+const { respaldarRegistroEnTrimestre } = require("./rutaRegistro");
 
 // ===== reg.equipoEjecutor[ficha][].ruta: relativa a la carpeta del
 // trimestre, no absoluta =====
@@ -169,6 +170,9 @@ async function prepararActaEquipoEjecutor(opciones, { simular = true } = {}) {
   const entrada = (reg.equipoEjecutor?.[String(horario.ficha)] || []).find(e => e.numero === numero);
   if (entrada) entrada.ruta = rutaRelativaSiCorresponde(rutaArchivo, path.dirname(opciones.carpetaSalida));
   guardarRegistro(reg);
+
+  const avisoRespaldo = respaldarRegistroEnTrimestre(path.dirname(opciones.carpetaSalida));
+  if (avisoRespaldo) avisos.push(avisoRespaldo);
 
   return { simulado: false, ficha: horario.ficha, programa: horario.programa, numero, archivo: nombreArchivo, avisos };
 }

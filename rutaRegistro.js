@@ -155,4 +155,106 @@ function obtenerAvisoRegistro() {
   return cache ? cache.aviso : null;
 }
 
-module.exports = { resolverRutaRegistro, obtenerAvisoRegistro, _resolver };
+// ===== Respaldo del registro en la carpeta del trimestre =====
+// registro.json vive en userData y hasta ahora solo se respaldaba como
+// efecto secundario de revertirFecha (revertir.js) — nunca durante la
+// generación normal. Riesgo real: un reinstall de Windows borra
+// %APPDATA% sin avisar, y con él el consecutivo y el historial completo.
+// La carpeta del trimestre es la única que sabemos con certeza que el
+// instructor ya respalda de verdad (ahí viven sus fichas reales), a
+// diferencia de userData.
+//
+// Nombres FIJOS, no con timestamp (a diferencia de revertir.js, que
+// respalda antes de una operación puntual y poco frecuente): esto corre
+// en cada generación, decenas de veces por sesión — un archivo nuevo cada
+// vez ensuciaría la carpeta real del instructor sin aportar nada. Dos
+// archivos en rotación, no uno solo: si el registro real se daña (por lo
+// que sea, ajeno a este mecanismo) y DESPUÉS se genera cualquier acta, un
+// archivo único se sobrescribiría con la versión ya dañada en la primera
+// corrida siguiente al daño — con dos, el ".anterior.json" todavía guarda
+// la generación de antes: una corrida de margen para notar el problema.
+const NOMBRE_RESPALDO = "_registro_actas_respaldo.json";
+const NOMBRE_RESPALDO_ANTERIOR = "_registro_actas_respaldo.anterior.json";
+const NOMBRE_LEEME = "LEEME_RESPALDO.txt";
+
+// Se escribe UNA sola vez por carpeta (si ya existe, no se vuelve a
+// tocar): sin esto, cualquiera que vea "_registro_actas_respaldo.json"
+// suelto en su carpeta del trimestre puede pensar que es basura temporal
+// y borrarlo. Ver ARQUITECTURA.md, pendiente 13, para la advertencia de
+// "antes de generar algo nuevo después de restaurar".
+const LEEME_RESPALDO = `Este archivo lo genera y actualiza automáticamente la aplicación "Actas CBA".
+
+QUÉ ES
+------
+_registro_actas_respaldo.json es una copia de seguridad del registro de
+actas: el consecutivo de numeración y el historial de llamados de
+atención generados, de esta ficha y de todas las demás que hayas
+procesado con esta instalación de Actas CBA. No es un archivo de esta
+ficha en particular: es un respaldo del archivo real, que vive en
+%APPDATA%\\actas-cba\\registro.json.
+
+_registro_actas_respaldo.anterior.json es la copia de un paso atrás (el
+estado de la vez anterior que se generó algo), para tener margen si el
+respaldo más reciente resultara dañado.
+
+NO LOS BORRES
+-------------
+Si el día de mañana reinstalan Windows en este computador (o el equipo
+se daña), %APPDATA% se pierde y con él el registro real. Como esta
+carpeta del trimestre normalmente sí está respaldada (OneDrive, Google
+Drive, un disco externo — lo que uses), estos archivos son la forma de
+recuperar el consecutivo y el historial sin empezar de cero.
+
+CÓMO RESTAURARLO SI HACE FALTA
+-------------------------------
+1. Cerrá Actas CBA por completo.
+2. Copiá _registro_actas_respaldo.json (el más reciente; usá el
+   ".anterior.json" solo si el primero está dañado o vacío) a:
+   %APPDATA%\\actas-cba\\registro.json
+   (reemplazando el que haya ahí).
+3. Volvé a abrir Actas CBA.
+
+IMPORTANTE ANTES DE GENERAR ALGO NUEVO DESPUÉS DE RESTAURAR
+-------------------------------------------------------------
+Si este respaldo es más viejo que la última vez que generaste actas de
+verdad, la aplicación puede repetir llamados de atención que ya se
+habían generado, o numerar un acta nueva con el mismo número que ya
+tiene un documento real. Antes de confiar en lo que diga el registro
+restaurado, revisá a mano, para cada ficha, que el historial coincida
+con los .docx que ya existen y con las filas de la hoja HISTORICO del
+control — todavía no hay una herramienta que lo haga sola.
+
+Este archivo se genera solo, una sola vez: no hace falta (ni conviene)
+editarlo a mano.
+`;
+
+// Copia registro.json a `carpetaTrimestre` (rotando el respaldo anterior
+// primero) y deja el LEEME si todavía no está. Mejor esfuerzo: NUNCA
+// lanza — devuelve null si salió bien, o un aviso en español si algo
+// falló, para que quien llama lo agregue a sus propios avisos (nunca en
+// silencio, pero tampoco bloquea la generación real por esto).
+function respaldarRegistroEnTrimestre(carpetaTrimestre) {
+  try {
+    const origen = resolverRutaRegistro();
+    if (!fs.existsSync(origen)) return null; // nada generado todavía: no hay qué respaldar
+
+    const destino = path.join(carpetaTrimestre, NOMBRE_RESPALDO);
+    const anterior = path.join(carpetaTrimestre, NOMBRE_RESPALDO_ANTERIOR);
+    if (fs.existsSync(destino)) fs.copyFileSync(destino, anterior); // rota ANTES de sobrescribir
+    fs.copyFileSync(origen, destino);
+  } catch (e) {
+    return `No se pudo respaldar el registro en la carpeta del trimestre (${carpetaTrimestre}): ${e.message}.`;
+  }
+  // El LEEME es solo explicativo: que falle no debe reportarse como que
+  // el respaldo real (lo que de verdad importa) falló.
+  try {
+    const rutaLeeme = path.join(carpetaTrimestre, NOMBRE_LEEME);
+    if (!fs.existsSync(rutaLeeme)) fs.writeFileSync(rutaLeeme, LEEME_RESPALDO, "utf8");
+  } catch { /* no crítico */ }
+  return null;
+}
+
+module.exports = {
+  resolverRutaRegistro, obtenerAvisoRegistro, _resolver,
+  respaldarRegistroEnTrimestre, NOMBRE_RESPALDO, NOMBRE_RESPALDO_ANTERIOR, NOMBRE_LEEME,
+};
