@@ -177,23 +177,149 @@ function xmlEscape(s) {
   return String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
 }
 
+// Ubica una hoja por NOMBRE dentro del .xlsx (zip) sin pasar por ninguna
+// librería de alto nivel: busca su r:id en workbook.xml, lo resuelve en
+// _rels/workbook.xml.rels, y devuelve el XML crudo de esa hoja. Extraída de
+// registrarEnHistorico (antes solo buscaba "HISTORICO") para reusarla desde
+// cualquier sitio que necesite editar una hoja puntual por cirugía de XML
+// sin arriesgar el resto del libro (ver establecerParametrosInstructor en
+// ipc.js, y localizarHoja en sofia.js, que hacía esto mismo por su cuenta).
+// null si la hoja no existe o el libro no tiene la forma esperada.
+function resolverHojaEnZip(zip, nombreHoja) {
+  const wbXml = zip.file("xl/workbook.xml").asText();
+  const m = wbXml.match(new RegExp(`<sheet[^>]*name="${nombreHoja}"[^>]*r:id="(rId\\d+)"`, "i")) ||
+            wbXml.match(new RegExp(`<sheet[^>]*r:id="(rId\\d+)"[^>]*name="${nombreHoja}"`, "i"));
+  if (!m) return null;
+  const rels = zip.file("xl/_rels/workbook.xml.rels").asText();
+  const rm = rels.match(new RegExp('Id="' + m[1] + '"[^>]*Target="([^"]+)"')) ||
+             rels.match(new RegExp('Target="([^"]+)"[^>]*Id="' + m[1] + '"'));
+  if (!rm) return null;
+  let target = rm[1].replace(/^\//, "");
+  if (!target.startsWith("xl/")) target = "xl/" + target.replace(/^\.\//, "");
+  const archivoHoja = zip.file(target);
+  if (!archivoHoja) return null;
+  return { target, xml: archivoHoja.asText() };
+}
+
+// Lee xl/sharedStrings.xml (si existe) a un array de textos: cada <si> en
+// el orden en que aparece ES su índice (así referencian las celdas t="s").
+// Un <si> puede ser texto simple (<si><t>texto</t></si>) o texto enriquecido
+// repartido en varios "runs" (<si><r><t>a</t></r><r><t>b</t></r></si>); en
+// ambos casos se concatenan todos los <t> de ese <si>. Se usa para LEER una
+// etiqueta de columna A por su texto (igual que ya hace leerControl al
+// armar PARAMETROS por clave/valor, no por posición) sin tener que abrir el
+// libro con una librería de alto nivel. Nunca se ESCRIBE en esta tabla —
+// ver la nota de cadenas compartidas en establecerParametrosInstructor
+// (ipc.js): editar una entrada existente arriesga cambiar otra celda que
+// comparta el mismo índice.
+function leerCadenasCompartidas(zip) {
+  const archivo = zip.file("xl/sharedStrings.xml");
+  if (!archivo) return [];
+  const xml = archivo.asText();
+  return [...xml.matchAll(/<si>([\s\S]*?)<\/si>/g)].map(m =>
+    [...m[1].matchAll(/<t[^>]*>([\s\S]*?)<\/t>/g)].map(t => t[1]).join("")
+      .replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&quot;/g, "\"").replace(/&apos;/g, "'").replace(/&amp;/g, "&")
+  );
+}
+
+// Extrae el <c>...</c> (o <c .../>) cuya referencia (r=) matchee
+// `refPattern` dentro de `xml` — una referencia exacta ("D1", para buscar
+// en una hoja completa) o un patrón de columna ("A\\d+", para buscar dentro
+// del XML de UNA fila ya recortada, sin importar el número de esa fila).
+// Cuantificador NO codicioso (`[^>]*?`) antes de decidir entre autocierre y
+// apertura+cierre: con uno codicioso, `s="3"/` se traga la barra del
+// autocierre antes de llegar a evaluar la alternativa, y el regex sigue de
+// largo hasta el próximo `</c>` de la celda equivocada.
+function extraerCelda(xml, refPattern) {
+  return xml.match(new RegExp(`<c r="${refPattern}"[^>]*?(?:/>|>[\\s\\S]*?</c>)`))?.[0] ?? null;
+}
+
+// Estilo (s="N") de la celda de esa columna en una fila de datos ya
+// existente — para que una fila NUEVA (poblarAprendices, sofia.js) herede
+// el mismo formato que ya traía la plantilla, en vez de salir sin estilo.
+function estiloDeColumna(filaXml, col) {
+  return extraerCelda(filaXml, `${col}\\d+`)?.match(/\ss="(\d+)"/)?.[1] ?? null;
+}
+
+// Texto visible de una celda cruda: resuelve cadenas compartidas (t="s")
+// contra `cadenas` (ver leerCadenasCompartidas), lee el texto inline
+// (t="inlineStr") directamente, o el valor crudo (sin tipo -> numérico en
+// OOXML) si no es ninguno de los dos. Para LEER una etiqueta de columna A
+// por su texto, igual que leerControl arma PARAMETROS por clave/valor.
+function textoDeCelda(celdaXml, cadenas) {
+  if (!celdaXml) return null;
+  const tipo = celdaXml.match(/\st="([^"]+)"/)?.[1];
+  if (tipo === "s") { const idx = celdaXml.match(/<v>(\d+)<\/v>/)?.[1]; return idx != null ? cadenas[Number(idx)] ?? null : null; }
+  if (tipo === "inlineStr") return celdaXml.match(/<is><t[^>]*>([\s\S]*?)<\/t><\/is>/)?.[1] ?? null;
+  return celdaXml.match(/<v>([\s\S]*?)<\/v>/)?.[1] ?? null;
+}
+
+// Celda nueva (t="inlineStr" para texto, numérica para "n"), con el mismo
+// `r`/`s` (referencia/estilo) que ya tenía la celda que reemplaza — así la
+// celda mantiene su formato aunque cambie el contenido. `estilo` puede ser
+// null (celda sin estilo propio en la plantilla). Mismo patrón que ya usan
+// registrarEnHistorico (arriba) y poblarAprendices (sofia.js).
+function celda(col, r, estilo, valor, tipo) {
+  const sAttr = estilo != null ? ` s="${estilo}"` : "";
+  if (valor == null || valor === "") return `<c r="${col}${r}"${sAttr}/>`;
+  if (tipo === "n") return `<c r="${col}${r}"${sAttr}><v>${valor}</v></c>`;
+  return `<c r="${col}${r}"${sAttr} t="inlineStr"><is><t>${xmlEscape(valor)}</t></is></c>`;
+}
+
+// Escribe pares etiqueta->valor en la hoja PARAMETROS (clave en columna A,
+// valor en columna B) editando SOLO esas celdas por cirugía de XML — NO con
+// XLSX.readFile/writeFile: la edición community de la librería xlsx no
+// conserva estilos, validaciones de datos (las listas desplegables de
+// APRENDICES) ni formato condicional al reescribir el libro completo. Usada
+// por "Nueva ficha" (establecerParametrosInstructor, ipc.js — regresión
+// confirmada del commit cecd7e5, ver ARQUITECTURA.md pendiente 11) y por la
+// ficha de demostración del modo prueba (crearFichaDemo, modoPrueba.js).
+//
+// Las etiquetas se leen por TEXTO de columna A (igual que leerControl arma
+// PARAMETROS por clave/valor, no por posición): si la plantilla no trae
+// alguna de las claves pedidas, esa celda puntual no se toca — nunca lanza
+// ni aborta por una etiqueta que no aparece.
+//
+// Cuidado con las cadenas compartidas: varias celdas de PARAMETROS son
+// t="s" (cadena compartida — <v> apunta a un ÍNDICE de
+// xl/sharedStrings.xml, una tabla DEDUPLICADA). Escribir el valor nuevo
+// directo en ese <v> apuntaría el índice viejo a un texto que ya no es el
+// que esa celda muestra, y si otra celda del libro comparte el mismo
+// índice (coincidencia de texto), también cambiaría SU contenido sin
+// tocarla. Por eso cada celda tocada se reemplaza ENTERA por una
+// t="inlineStr" (o numérica): nunca se toca sharedStrings.xml, así que no
+// hay índice compartido que arriesgar.
+function escribirParametros(rutaControl, valores) {
+  const zip = new PizZip(fs.readFileSync(rutaControl));
+  const hoja = resolverHojaEnZip(zip, "PARAMETROS");
+  if (!hoja) return false; // plantilla sin la hoja esperada: no se toca nada
+  const cadenas = leerCadenasCompartidas(zip);
+
+  const xml = hoja.xml.replace(/<row[^>]*\br="(\d+)"[^>]*>[\s\S]*?<\/row>/g, filaXml => {
+    const etiqueta = String(textoDeCelda(extraerCelda(filaXml, "A\\d+"), cadenas) ?? "").trim().toUpperCase();
+    if (!(etiqueta in valores)) return filaXml;
+
+    const r = filaXml.match(/\br="(\d+)"/)[1];
+    const celdaB = extraerCelda(filaXml, "B\\d+");
+    const estilo = celdaB?.match(/\ss="(\d+)"/)?.[1] ?? null;
+    const valor = String(valores[etiqueta] ?? "");
+    const nuevaCeldaB = celda("B", r, estilo, valor, /^\d+$/.test(valor) ? "n" : "texto");
+    return celdaB ? filaXml.replace(celdaB, nuevaCeldaB) : filaXml.replace(/<\/row>$/, `${nuevaCeldaB}</row>`);
+  });
+
+  zip.file(hoja.target, xml);
+  fs.writeFileSync(rutaControl, zip.generate({ type: "nodebuffer", compression: "DEFLATE" }));
+  return true;
+}
+
 // Escribe la fila en HISTORICO editando SOLO el XML de esa hoja dentro del .xlsx:
 // el resto del archivo (colores, anchos, formulas, celdas) queda byte a byte identico.
 function registrarEnHistorico(ruta, fila) {
   const zip = new PizZip(fs.readFileSync(ruta));
-  const wbXml = zip.file("xl/workbook.xml").asText();
-  const m = wbXml.match(/<sheet[^>]*name="HISTORICO"[^>]*r:id="(rId\d+)"/i) ||
-            wbXml.match(/<sheet[^>]*r:id="(rId\d+)"[^>]*name="HISTORICO"/i);
-  if (!m) return false;
-  const rels = zip.file("xl/_rels/workbook.xml.rels").asText();
-  const rm = rels.match(new RegExp('Id="' + m[1] + '"[^>]*Target="([^"]+)"')) ||
-             rels.match(new RegExp('Target="([^"]+)"[^>]*Id="' + m[1] + '"'));
-  if (!rm) return false;
-  let target = rm[1].replace(/^\//, "");
-  if (!target.startsWith("xl/")) target = "xl/" + target.replace(/^\.\//, "");
-  const archivoHoja = zip.file(target);
-  if (!archivoHoja) return false;
-  let xml = archivoHoja.asText();
+  const hoja = resolverHojaEnZip(zip, "HISTORICO");
+  if (!hoja) return false;
+  const { target } = hoja;
+  let xml = hoja.xml;
 
   // anti-duplicado: numero de acta ya inyectado por nosotros
   const acta = xmlEscape(String(fila[5]));
@@ -473,4 +599,10 @@ module.exports = {
   procesarControl, procesarTrimestre, generarEntregaControl, generarEntregas, leerControl,
   // reutilizados por equipo_ejecutor.js, para no duplicar reglas ya escritas aquí
   norm, evaluarAprendiz, recibeLlamado, categoriaDe, CATEGORIAS,
+  // utilidades de cirugía de XML sobre el .xlsx, reutilizadas por sofia.js
+  // (poblarAprendices) e ipc.js/modoPrueba.js (establecerParametrosInstructor,
+  // crearFichaDemo): editar una hoja puntual sin reescribir el libro completo
+  // con una librería de alto nivel, que no conserva estilos, validaciones ni
+  // formato condicional.
+  resolverHojaEnZip, leerCadenasCompartidas, xmlEscape, extraerCelda, estiloDeColumna, celda, escribirParametros,
 };

@@ -12,6 +12,7 @@ const fs = require("fs");
 const path = require("path");
 const XLSX = require("xlsx");
 const PizZip = require("pizzip");
+const { resolverHojaEnZip, estiloDeColumna, celda } = require("./procesar");
 
 const norm = s => String(s ?? "").normalize("NFD").replace(/[̀-ͯ]/g, "").replace(/\s+/g, " ").trim().toUpperCase();
 
@@ -25,10 +26,6 @@ const norm = s => String(s ?? "").normalize("NFD").replace(/[̀-ͯ]/g, "").repla
 const MAPA_ESTADOS = {
   "EN INDUCCION": "EN FORMACION",
 };
-
-function xmlEscape(s) {
-  return String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
-}
 
 // Lee el reporte de aprendices de SOFIA (.xls o .xlsx) y devuelve la ficha,
 // su estado, y la lista de aprendices ya lista para escribir en el control:
@@ -67,33 +64,6 @@ function leerReporteSofia(ruta) {
   return { ficha, estadoFicha, aprendices, advertencias };
 }
 
-function localizarHoja(zip, nombreHoja) {
-  const wbXml = zip.file("xl/workbook.xml").asText();
-  const m = wbXml.match(new RegExp(`<sheet[^>]*name="${nombreHoja}"[^>]*r:id="(rId\\d+)"`, "i")) ||
-            wbXml.match(new RegExp(`<sheet[^>]*r:id="(rId\\d+)"[^>]*name="${nombreHoja}"`, "i"));
-  if (!m) return null;
-  const rels = zip.file("xl/_rels/workbook.xml.rels").asText();
-  const rm = rels.match(new RegExp('Id="' + m[1] + '"[^>]*Target="([^"]+)"')) ||
-             rels.match(new RegExp('Target="([^"]+)"[^>]*Id="' + m[1] + '"'));
-  if (!rm) return null;
-  let target = rm[1].replace(/^\//, "");
-  if (!target.startsWith("xl/")) target = "xl/" + target.replace(/^\.\//, "");
-  return target;
-}
-
-function estiloDeColumna(filaXml, col) {
-  if (!filaXml) return null;
-  const m = filaXml.match(new RegExp(`<c r="${col}\\d+"(?:\\s+s="(\\d+)")?`));
-  return m ? m[1] || null : null;
-}
-
-function celda(col, r, estilo, valor, tipo) {
-  const sAttr = estilo != null ? ` s="${estilo}"` : "";
-  if (valor == null || valor === "") return `<c r="${col}${r}"${sAttr}/>`;
-  if (tipo === "n") return `<c r="${col}${r}"${sAttr}><v>${valor}</v></c>`;
-  return `<c r="${col}${r}"${sAttr} t="inlineStr"><is><t>${xmlEscape(valor)}</t></is></c>`;
-}
-
 /**
  * Reemplaza las filas de datos de la hoja APRENDICES del control por
  * `aprendices` (la fila 1, el encabezado, no se toca). Es para "inicializar
@@ -107,10 +77,9 @@ function celda(col, r, estilo, valor, tipo) {
  */
 function poblarAprendices(rutaControl, aprendices, { simular = true, avisoSiHay = 0 } = {}) {
   const zip = new PizZip(fs.readFileSync(rutaControl));
-  const target = localizarHoja(zip, "APRENDICES");
-  if (!target) throw new Error(`El archivo no tiene la hoja APRENDICES: ${path.basename(rutaControl)}`);
-  const archivoHoja = zip.file(target);
-  const xml = archivoHoja.asText();
+  const hoja = resolverHojaEnZip(zip, "APRENDICES");
+  if (!hoja) throw new Error(`El archivo no tiene la hoja APRENDICES: ${path.basename(rutaControl)}`);
+  const { target, xml } = hoja;
 
   const filas = [...xml.matchAll(/<row[^>]*\br="(\d+)"[^>]*>[\s\S]*?<\/row>/g)];
   const filaEncabezado = filas.find(f => f[1] === "1");

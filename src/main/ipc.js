@@ -11,12 +11,11 @@
 const { ipcMain, dialog, shell } = require("electron");
 const fs = require("fs");
 const path = require("path");
-const XLSX = require("xlsx");
 
 const RAIZ = path.join(__dirname, "..", "..");
 const requerir = nombre => require(path.join(RAIZ, nombre));
 
-const { procesarControl, generarEntregaControl, leerControl } = requerir("procesar");
+const { procesarControl, generarEntregaControl, leerControl, escribirParametros } = requerir("procesar");
 const { leerReporteSofia, poblarAprendices } = requerir("sofia");
 const { leerHorario } = requerir("horario");
 const { prepararActaEquipoEjecutor } = requerir("equipo_ejecutor");
@@ -302,6 +301,12 @@ ipcMain.handle("revertir:ejecutar", (_e, carpeta, fecha, opciones) => {
 // mano (ficha, programa, competencia: un control es de un solo instructor
 // y una sola competencia).
 //
+// La precarga usa escribirParametros() (procesar.js), que edita SOLO esas
+// celdas por cirugía de XML — antes (commit cecd7e5) reabría el libro con
+// XLSX.readFile/writeFile y perdía estilos, listas desplegables y formato
+// condicional de TODO el libro, no solo de PARAMETROS (ver ARQUITECTURA.md,
+// pendiente 11, resuelto).
+//
 // Ya NO se bloquea en modo prueba: a diferencia de antes (un diálogo
 // nativo dejaba elegir CUALQUIER carpeta real), el destino es siempre
 // carpetaTrimestreEfectiva(), que en modo prueba ya es la carpeta de
@@ -309,19 +314,6 @@ ipcMain.handle("revertir:ejecutar", (_e, carpeta, fecha, opciones) => {
 function bloquearSiModoPrueba() {
   if (cargarConfiguracion().modoPrueba)
     throw new Error("Migrar aprendices está deshabilitado en modo prueba: el reporte de SOFIA se elige con un diálogo libre, que podría traer un archivo real. Apaga el modo prueba para usarlo.");
-}
-
-function establecerParametrosInstructor(rutaControl, act) {
-  const wb = XLSX.readFile(rutaControl, { cellDates: true });
-  const filas = XLSX.utils.sheet_to_json(wb.Sheets["PARAMETROS"], { header: 1, defval: null });
-  for (const fila of filas) {
-    const clave = String(fila[0] ?? "").trim().toUpperCase();
-    if (clave === "INSTRUCTOR") fila[1] = act.nombre;
-    if (clave === "DOCUMENTO INSTRUCTOR") fila[1] = act.documento;
-    if (clave === "CORREO INSTRUCTOR") fila[1] = act.correo;
-  }
-  wb.Sheets["PARAMETROS"] = XLSX.utils.aoa_to_sheet(filas);
-  XLSX.writeFile(wb, rutaControl);
 }
 
 ipcMain.handle("inicializar:crearControl", (_e, { nombreCarpeta }) => {
@@ -340,7 +332,11 @@ ipcMain.handle("inicializar:crearControl", (_e, { nombreCarpeta }) => {
     fs.copyFileSync(RUTA_PLANTILLA_MAESTRA, rutaControl);
 
     const estado = activacion.estadoActivacion(cargarConfiguracion(), activacion.resolverSecreto());
-    if (estado.activado) establecerParametrosInstructor(rutaControl, estado.activacion);
+    if (estado.activado) escribirParametros(rutaControl, {
+      "INSTRUCTOR": estado.activacion.nombre,
+      "DOCUMENTO INSTRUCTOR": estado.activacion.documento,
+      "CORREO INSTRUCTOR": estado.activacion.correo,
+    });
 
     // ACTAS_SIN_ABRIR_EXCEL: mismo patrón que ACTAS_REGISTRO_RUTA
     // (generar.js) — variable que SOLO fija la prueba automatizada de

@@ -13,9 +13,12 @@
 const fs = require("fs");
 const path = require("path");
 const { app } = require("electron");
-const XLSX = require("xlsx");
+const PizZip = require("pizzip");
 
 const RAIZ = path.join(__dirname, "..", "..");
+const requerir = nombre => require(path.join(RAIZ, nombre));
+const { escribirParametros, resolverHojaEnZip, extraerCelda, celda } = requerir("procesar");
+const { poblarAprendices } = requerir("sofia");
 const RUTA_PLANTILLA_MAESTRA = path.join(RAIZ, "PLANTILLA_MAESTRA_CONTROL_ASISTENCIA V3.xlsx");
 const NOMBRE_FICHA_DEMO = "0000000 - FICHA DE DEMOSTRACIÓN (MODO PRUEBA)";
 
@@ -25,43 +28,75 @@ const rutaTrimestreDemo = () => path.join(rutaBase(), "trimestre_demo");
 const rutaFichaDemo = () => path.join(rutaTrimestreDemo(), NOMBRE_FICHA_DEMO);
 const rutaControlDemo = () => path.join(rutaFichaDemo(), "CONTROL_ASISTENCIA_DEMO.xlsx");
 
+// Serial de Excel para una fecha: inversa EXACTA de aFecha() (procesar.js,
+// rama numérica: `new Date(Math.round((v - 25569) * 86400 * 1000))`), para
+// que la fecha de sesión de la ficha demo se lea de vuelta como el mismo
+// día, sin depender de cómo una librería de alto nivel decida convertirla.
+const fechaASerial = d => d.getTime() / 86400000 + 25569;
+
+// Reemplaza, en la hoja `nombreHoja`, celdas puntuales por referencia EXACTA
+// ("D1") — conservando el estilo (s=) que ya tenía cada una, sin tocar el
+// resto del libro. Mismo patrón que escribirParametros (procesar.js), pero
+// por referencia en vez de por etiqueta de columna A: la ficha de
+// demostración no depende de texto que haya escrito nadie, así que no hace
+// falta buscar por etiqueta.
+function escribirCeldasEnHoja(rutaControl, nombreHoja, celdasPorRef) {
+  const zip = new PizZip(fs.readFileSync(rutaControl));
+  const hoja = resolverHojaEnZip(zip, nombreHoja);
+  if (!hoja) return;
+  let xml = hoja.xml;
+  for (const [ref, { valor, tipo }] of Object.entries(celdasPorRef)) {
+    const celdaVieja = extraerCelda(xml, ref);
+    if (!celdaVieja) continue; // celda que no está en la plantilla: no se inventa
+    const estilo = celdaVieja.match(/\ss="(\d+)"/)?.[1] ?? null;
+    xml = xml.replace(celdaVieja, celda(ref.match(/^[A-Z]+/)[0], ref.match(/\d+$/)[0], estilo, valor, tipo));
+  }
+  zip.file(hoja.target, xml);
+  fs.writeFileSync(rutaControl, zip.generate({ type: "nodebuffer", compression: "DEFLATE" }));
+}
+
 // Arma la ficha ficticia de demostración desde cero: plantilla en blanco +
 // PARAMETROS de mentira + dos aprendices de mentira, uno con una
 // inasistencia ya lista para que "Generar actas" tenga algo que mostrar sin
 // pasos previos (útil para demostrar la app en el computador de un
 // compañero sin tener que preparar nada a mano primero).
+//
+// Todo por cirugía de XML (escribirParametros/poblarAprendices/
+// escribirCeldasEnHoja), NO con XLSX.readFile/writeFile sobre el libro
+// completo: mismo motivo que "Nueva ficha" en ipc.js (ver ARQUITECTURA.md,
+// pendiente 11) — aunque esta ficha sea de mentira, no hay razón para que
+// pierda las listas desplegables y el formato condicional que sí demuestra
+// tener la plantilla real.
 function crearFichaDemo() {
   fs.mkdirSync(rutaFichaDemo(), { recursive: true });
   fs.copyFileSync(RUTA_PLANTILLA_MAESTRA, rutaControlDemo());
 
-  const wb = XLSX.readFile(rutaControlDemo(), { cellDates: true });
+  escribirParametros(rutaControlDemo(), {
+    "FICHA": "0000000", // string, no numero: 0 es falsy y dispara "PARAMETROS incompletos" en leerControl
+    "PROGRAMA DE FORMACIÓN": "PROGRAMA DE DEMOSTRACIÓN",
+    "COMPETENCIA": "COMPETENCIA DE DEMOSTRACIÓN",
+    "INSTRUCTOR": "INSTRUCTOR DE DEMOSTRACIÓN",
+    "DOCUMENTO INSTRUCTOR": "0",
+    "CORREO INSTRUCTOR": "demo@ejemplo.test",
+    "PROCESAR EN AUTOMATIZACIÓN": "SI",
+    "GENERAR ACTA DE ENTREGA": "SI",
+  });
 
-  const pf = XLSX.utils.sheet_to_json(wb.Sheets["PARAMETROS"], { header: 1, defval: null });
-  for (const fila of pf) {
-    const clave = String(fila[0] ?? "").trim().toUpperCase();
-    if (clave === "FICHA") fila[1] = "0000000"; // string, no numero: 0 es falsy y dispara "PARAMETROS incompletos" en leerControl
-    if (clave === "PROGRAMA DE FORMACIÓN") fila[1] = "PROGRAMA DE DEMOSTRACIÓN";
-    if (clave === "COMPETENCIA") fila[1] = "COMPETENCIA DE DEMOSTRACIÓN";
-    if (clave === "INSTRUCTOR") fila[1] = "INSTRUCTOR DE DEMOSTRACIÓN";
-    if (clave === "DOCUMENTO INSTRUCTOR") fila[1] = 0;
-    if (clave === "CORREO INSTRUCTOR") fila[1] = "demo@ejemplo.test";
-    if (clave === "PROCESAR EN AUTOMATIZACIÓN") fila[1] = "SI";
-    if (clave === "GENERAR ACTA DE ENTREGA") fila[1] = "SI";
-  }
-  wb.Sheets["PARAMETROS"] = XLSX.utils.aoa_to_sheet(pf);
+  escribirCeldasEnHoja(rutaControlDemo(), "ASISTENCIA", {
+    D1: { valor: fechaASerial(new Date()), tipo: "n" }, // una sesión, hoy
+    D2: { valor: 0, tipo: "n" },                        // aprendiz uno: inasistencia, lista para demostrar
+    D3: { valor: "X", tipo: "texto" },                  // aprendiz dos: presente
+  });
 
-  const af = XLSX.utils.sheet_to_json(wb.Sheets["ASISTENCIA"], { header: 1, defval: null });
-  af[0][3] = new Date(); // una sesión, hoy
-  af[1][3] = 0;          // aprendiz uno: inasistencia, lista para demostrar
-  af[2][3] = "X";        // aprendiz dos: presente
-  wb.Sheets["ASISTENCIA"] = XLSX.utils.aoa_to_sheet(af);
-
-  const apf = XLSX.utils.sheet_to_json(wb.Sheets["APRENDICES"], { header: 1, defval: null });
-  apf[1] = [1, 1000000001, "APRENDIZ DE DEMOSTRACIÓN UNO", "demo1@ejemplo.test", "EN FORMACION", null, null];
-  apf[2] = [2, 1000000002, "APRENDIZ DE DEMOSTRACIÓN DOS", "demo2@ejemplo.test", "EN FORMACION", "SI", null];
-  wb.Sheets["APRENDICES"] = XLSX.utils.aoa_to_sheet(apf);
-
-  XLSX.writeFile(wb, rutaControlDemo());
+  // poblarAprendices ya es seguro (cirugía de XML, ver sofia.js) — se
+  // reusa en vez de reinventar la escritura de APRENDICES una tercera vez.
+  // Nota: el aprendiz dos pierde el detalle "evaluado en SOFIA = SI" que
+  // tenía la versión anterior de esta demo (poblarAprendices no distingue
+  // esa columna) — cosmético, no afecta lo que la demo demuestra.
+  poblarAprendices(rutaControlDemo(), [
+    { documento: "1000000001", nombreCompleto: "APRENDIZ DE DEMOSTRACIÓN UNO", correo: "demo1@ejemplo.test", estado: "EN FORMACION" },
+    { documento: "1000000002", nombreCompleto: "APRENDIZ DE DEMOSTRACIÓN DOS", correo: "demo2@ejemplo.test", estado: "EN FORMACION" },
+  ], { simular: false });
 }
 
 function asegurarFichaDemo() {
