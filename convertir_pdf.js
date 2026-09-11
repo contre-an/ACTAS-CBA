@@ -56,9 +56,16 @@ function buscarPendientes(carpetaFicha) {
   return [...buscarPendientesEn(carpetaFicha), ...buscarPendientesEn(path.join(carpetaFicha, "LLAMADOS DE ATENCION"))];
 }
 
+// [Console]::OutputEncoding en UTF8: PowerShell 5.1 (powershell.exe, no
+// pwsh) escribe su salida estándar en el code page de la consola, NO en
+// UTF-8 — sin esto, un nombre con ñ/tildes llega a Node (que decodifica el
+// stdout capturado como UTF-8, ver convertirPdf) con caracteres de
+// reemplazo, aunque el .pdf en disco haya quedado bien. Debe ir ANTES de
+// cualquier Write-Output.
 function generarScript(rutas) {
   const lista = rutas.map(r => `'${r.replace(/'/g, "''")}'`).join(", ");
-  return `$ErrorActionPreference='Stop'
+  return `[Console]::OutputEncoding = [System.Text.Encoding]::UTF8
+$ErrorActionPreference='Stop'
 $word = New-Object -ComObject Word.Application
 $word.Visible = $false
 $word.DisplayAlerts = 0
@@ -72,6 +79,20 @@ foreach ($f in @(${lista})) {
 }
 $word.Quit()
 `;
+}
+
+// Escribe el script en un .ps1 temporal con BOM UTF-8 (el "﻿" inicial):
+// PowerShell 5.1 (powershell.exe), al leer un .ps1 con -File, solo usa
+// UTF-8 si detecta el BOM al inicio del archivo; sin él, cae al code page
+// ANSI del sistema, y cualquier ñ/tilde en el nombre del .docx (dentro de
+// las comillas simples que arma generarScript) se relee mal — un byte
+// corrupto puede decodificarse como comilla y cerrar la cadena a mitad de
+// camino (reproducido: así se rompía con "PATIÑO"). fs.writeFileSync con
+// "utf8" nunca antepone BOM por su cuenta.
+function escribirScriptTemporal(rutas) {
+  const ruta = path.join(os.tmpdir(), `convertir_pdf_${Date.now()}.ps1`);
+  fs.writeFileSync(ruta, "﻿" + generarScript(rutas), "utf8");
+  return ruta;
 }
 
 /**
@@ -106,8 +127,7 @@ function convertirPdf(carpeta, { simular = true } = {}) {
 
   if (!pendientes.length) return { carpeta, convertidos: [], errores: [], total: 0, avisos };
 
-  const rutaScript = path.join(os.tmpdir(), `convertir_pdf_${Date.now()}.ps1`);
-  fs.writeFileSync(rutaScript, generarScript(pendientes), "utf8");
+  const rutaScript = escribirScriptTemporal(pendientes);
 
   let salida;
   try {
@@ -124,4 +144,10 @@ function convertirPdf(carpeta, { simular = true } = {}) {
   return { carpeta, convertidos, errores, total: pendientes.length, avisos };
 }
 
-module.exports = { convertirPdf, wordInstalado, wordEstaAbierto, buscarPendientes };
+module.exports = {
+  convertirPdf, wordInstalado, wordEstaAbierto, buscarPendientes,
+  // generarScript/escribirScriptTemporal se exportan para la prueba de
+  // codificación (pruebas/convertir_pdf_encoding.test.js), que cubre la
+  // generación y la lectura del .ps1 sin invocar Word.
+  generarScript, escribirScriptTemporal,
+};
