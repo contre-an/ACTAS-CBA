@@ -546,3 +546,48 @@ aprobación. Estado actual por función:
     termina la conversión (ver pendiente 9: es un chequeo en vivo contra
     disco, no un flag desactualizado); esto es solo que la vista abierta
     no se entera sin que alguien la vuelva a pedir.
+11. **"Nueva ficha" pierde formato, validaciones y formato condicional del
+    control** — anotado, sin implementar. Verificado contra
+    `PLANTILLA_MAESTRA_CONTROL_ASISTENCIA V3.xlsx`: sí trae negritas,
+    rellenos, bordes, anchos de columna, paneles inmovilizados, formato
+    condicional y listas desplegables (columna E de APRENDICES, los 8
+    estados del Acuerdo 009; columna F, SI/NO) — el control que crea
+    `inicializar:crearControl` (`ipc.js`) sale sin nada de eso.
+
+    Causa raíz confirmada — es una regresión del commit `cecd7e5`
+    ("Nueva ficha: destino ya no es un diálogo libre, instructor
+    precargado", 2026-09-09): antes, ese paso solo hacía
+    `fs.copyFileSync` (copia byte a byte, todo intacto). Ese commit agregó
+    `establecerParametrosInstructor` (`ipc.js`) para precargar
+    INSTRUCTOR/DOCUMENTO INSTRUCTOR/CORREO INSTRUCTOR desde la
+    activación — pero lo hace con `XLSX.readFile` +
+    `XLSX.utils.aoa_to_sheet` + `XLSX.writeFile` sobre el libro completo.
+    La edición community de `xlsx` (la que trae `package.json`) no
+    conserva estilos, validaciones de datos ni formato condicional al
+    reescribir así: lo que sale de `writeFile` son solo los datos.
+
+    El proyecto ya tiene el patrón correcto para esto, solo que en otro
+    archivo: `registrarEnHistorico` (`procesar.js`) escribe una fila
+    nueva editando SOLO el XML de esa hoja dentro del .xlsx (con
+    PizZip), sin tocar el resto del archivo — el mismo enfoque que
+    `herramientas/agregar_hoja_descripciones.js` usó para agregar la
+    hoja DESCRIPCIONES sin romper nada (ver pendiente 1, resuelto).
+    Arreglar esto es aplicar ese mismo enfoque a
+    `establecerParametrosInstructor`: editar por XML solo las 3 celdas de
+    PARAMETROS, en vez de pasar por `XLSX.readFile`/`writeFile`.
+
+    Impacto real, no cosmético: sin la lista desplegable, el estado de la
+    columna E se escribe a mano; `recibeLlamado()` (`procesar.js`)
+    compara contra exactamente `EN FORMACION` (o `ACTIVO`, legado) tras
+    `norm()`. Un estado mal tecleado (una palabra de más, una sigla
+    distinta) excluye a ese aprendiz de TODOS los llamados de atención
+    sin ningún aviso — mismo mecanismo, distinta causa, que el "1
+    omitido por su estado" que abrió la conversación de hoy sobre el
+    diagnóstico de actas.
+12. **Falta un botón de salida en la aplicación** — anotado, sin
+    implementar. `main.js` oculta la barra de menú de Electron
+    (`setMenuBarVisibility(false)`), así que no hay un menú Archivo →
+    Salir; la ventana no se crea con `frame: false`, así que el botón
+    nativo de cerrar (X) de Windows sigue ahí y sí cierra la app
+    (`window-all-closed` → `app.quit()`), pero no hay ninguna acción de
+    salida dentro de la propia interfaz (`index.html`/`app.js`).
