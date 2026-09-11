@@ -173,29 +173,55 @@ function obtenerAvisoRegistro() {
 // archivo único se sobrescribiría con la versión ya dañada en la primera
 // corrida siguiente al daño — con dos, el ".anterior.json" todavía guarda
 // la generación de antes: una corrida de margen para notar el problema.
-const NOMBRE_RESPALDO = "_registro_actas_respaldo.json";
-const NOMBRE_RESPALDO_ANTERIOR = "_registro_actas_respaldo.anterior.json";
+// El código de instructor va en el nombre del archivo (mismo valor y
+// mismo formato que numeroActa() en generar.js: ACTAS_CODIGO_INSTRUCTOR,
+// 2 dígitos): varios instructores pueden compartir la misma carpeta de
+// trimestre (Drive/OneDrive de equipo) — sin esto, el respaldo de uno
+// pisaría el del otro, aunque cada uno tenga su PROPIA instalación con su
+// PROPIO registro.json. Si por lo que sea no hay código disponible
+// (variable sin fijar), se usa el nombre SIN sufijo en vez de fallar —
+// mismo criterio de "mejor esfuerzo" que el resto de esta función.
+function sufijoInstructor() {
+  const codigo = process.env.ACTAS_CODIGO_INSTRUCTOR;
+  return codigo ? `_${String(codigo).padStart(2, "0").slice(-2)}` : "";
+}
+function nombreRespaldo() { return `_registro_actas_respaldo${sufijoInstructor()}.json`; }
+function nombreRespaldoAnterior() { return `_registro_actas_respaldo${sufijoInstructor()}.anterior.json`; }
 const NOMBRE_LEEME = "LEEME_RESPALDO.txt";
 
 // Se escribe UNA sola vez por carpeta (si ya existe, no se vuelve a
-// tocar): sin esto, cualquiera que vea "_registro_actas_respaldo.json"
+// tocar): sin esto, cualquiera que vea "_registro_actas_respaldo_01.json"
 // suelto en su carpeta del trimestre puede pensar que es basura temporal
-// y borrarlo. Ver ARQUITECTURA.md, pendiente 13, para la advertencia de
-// "antes de generar algo nuevo después de restaurar".
+// y borrarlo. Genérico a propósito (no lleva el código de nadie en
+// particular): lo puede escribir cualquiera de los instructores que
+// comparten la carpeta, el primero que genere algo. Ver ARQUITECTURA.md,
+// pendiente 13, para la advertencia de "antes de generar algo nuevo
+// después de restaurar".
 const LEEME_RESPALDO = `Este archivo lo genera y actualiza automáticamente la aplicación "Actas CBA".
 
 QUÉ ES
 ------
-_registro_actas_respaldo.json es una copia de seguridad del registro de
-actas: el consecutivo de numeración y el historial de llamados de
-atención generados, de esta ficha y de todas las demás que hayas
-procesado con esta instalación de Actas CBA. No es un archivo de esta
-ficha en particular: es un respaldo del archivo real, que vive en
-%APPDATA%\\actas-cba\\registro.json.
+"_registro_actas_respaldo_XX.json" (XX = tu código de instructor, el
+mismo que aparece en el número de tus actas) es una copia de seguridad
+de TU registro de actas: el consecutivo de numeración y el historial de
+llamados de atención generados, de esta ficha y de todas las demás que
+hayas procesado con TU instalación de Actas CBA. No es un archivo de
+esta ficha en particular: es un respaldo del archivo real, que vive en
+tu computador, en %APPDATA%\\actas-cba\\registro.json.
 
-_registro_actas_respaldo.anterior.json es la copia de un paso atrás (el
-estado de la vez anterior que se generó algo), para tener margen si el
-respaldo más reciente resultara dañado.
+"_registro_actas_respaldo_XX.anterior.json" es la copia de un paso atrás
+(tu estado de la vez anterior que generaste algo), para tener margen si
+el respaldo más reciente resultara dañado.
+
+SI VARIOS INSTRUCTORES COMPARTEN ESTA CARPETA
+----------------------------------------------
+Cada instructor que use Actas CBA en esta carpeta del trimestre tiene su
+PROPIO par de archivos, distinguidos por el código al final del nombre
+(por ejemplo, "_registro_actas_respaldo_05.json" es el respaldo del
+instructor con código 05) — porque cada uno tiene también su PROPIA
+instalación de Actas CBA, con su PROPIO registro.json, en su PROPIO
+computador. Los archivos de otro instructor no sirven para restaurar el
+tuyo: usá siempre el que lleva TU código.
 
 NO LOS BORRES
 -------------
@@ -208,8 +234,9 @@ recuperar el consecutivo y el historial sin empezar de cero.
 CÓMO RESTAURARLO SI HACE FALTA
 -------------------------------
 1. Cerrá Actas CBA por completo.
-2. Copiá _registro_actas_respaldo.json (el más reciente; usá el
-   ".anterior.json" solo si el primero está dañado o vacío) a:
+2. Copiá el "_registro_actas_respaldo_XX.json" que lleve TU código (el
+   más reciente; usá el ".anterior.json" solo si el primero está dañado
+   o vacío) a:
    %APPDATA%\\actas-cba\\registro.json
    (reemplazando el que haya ahí).
 3. Volvé a abrir Actas CBA.
@@ -238,8 +265,8 @@ function respaldarRegistroEnTrimestre(carpetaTrimestre) {
     const origen = resolverRutaRegistro();
     if (!fs.existsSync(origen)) return null; // nada generado todavía: no hay qué respaldar
 
-    const destino = path.join(carpetaTrimestre, NOMBRE_RESPALDO);
-    const anterior = path.join(carpetaTrimestre, NOMBRE_RESPALDO_ANTERIOR);
+    const destino = path.join(carpetaTrimestre, nombreRespaldo());
+    const anterior = path.join(carpetaTrimestre, nombreRespaldoAnterior());
     if (fs.existsSync(destino)) fs.copyFileSync(destino, anterior); // rota ANTES de sobrescribir
     fs.copyFileSync(origen, destino);
   } catch (e) {
@@ -256,5 +283,5 @@ function respaldarRegistroEnTrimestre(carpetaTrimestre) {
 
 module.exports = {
   resolverRutaRegistro, obtenerAvisoRegistro, _resolver,
-  respaldarRegistroEnTrimestre, NOMBRE_RESPALDO, NOMBRE_RESPALDO_ANTERIOR, NOMBRE_LEEME,
+  respaldarRegistroEnTrimestre, nombreRespaldo, nombreRespaldoAnterior, NOMBRE_LEEME,
 };
