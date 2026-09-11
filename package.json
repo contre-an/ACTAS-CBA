@@ -1,6 +1,6 @@
 {
   "name": "actas-cba",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "private": true,
   "description": "Generador de actas disciplinarias CBA (Acuerdo 009 de 2024) a partir del control de asistencia en Excel",
   "main": "src/main/main.js",
