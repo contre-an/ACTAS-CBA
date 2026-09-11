@@ -55,7 +55,8 @@
     },
     "nsis": {
       "oneClick": false,
-      "allowToChangeInstallationDirectory": true
+      "allowToChangeInstallationDirectory": true,
+      "artifactName": "Actas-CBA-Setup-${version}.${ext}"
     },
     "publish": {
       "provider": "github",
